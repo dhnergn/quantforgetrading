@@ -1,4 +1,4 @@
-"""API layer — FastAPI application."""
-from quantforge.api.main import create_app
+"""FastAPI application layer."""
+from quantforge.api.app import create_app
 
 __all__ = ["create_app"]
