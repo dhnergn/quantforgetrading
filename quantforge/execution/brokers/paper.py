@@ -372,6 +372,16 @@ class PaperBrokerAdapter(BrokerAdapter):
             lp = order.limit_price
             if lp is None:
                 return None
+            # A marketable limit fills immediately at the better of the limit
+            # and the current price. Requiring the bar's range to reach the
+            # limit would make a buy limit above the market wait forever, which
+            # is not how any exchange behaves.
+            if order.side == OrderSide.LONG and lp >= c:
+                return min(lp, c)
+            if order.side == OrderSide.SHORT and lp <= c:
+                return max(lp, c)
+            # A non-marketable resting limit fills only if the bar trades
+            # through it, and then at the limit price.
             touched = (l <= lp <= h) if order.side == OrderSide.LONG else (h >= lp >= l)
             if not touched:
                 return None

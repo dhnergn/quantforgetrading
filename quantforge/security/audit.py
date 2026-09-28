@@ -28,6 +28,7 @@ from typing import Any, Iterable, Optional, Sequence
 import pandas as pd
 
 from quantforge.core.enums import AuditAction
+from quantforge.core.errors import SandboxViolation
 from quantforge.core.timestamps import utcnow
 
 GENESIS = "0" * 64
@@ -212,10 +213,6 @@ AuditEntry._signature_invalid = _signature_invalid  # type: ignore[attr-defined]
 # ==========================================================================
 # Sandbox
 # ==========================================================================
-
-
-class SandboxViolation(Exception):
-    """Raised by the strategy sandbox. Distinct from a user-code error."""
 
 
 class StrategySandbox:

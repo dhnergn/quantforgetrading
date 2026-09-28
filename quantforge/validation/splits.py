@@ -498,7 +498,12 @@ def monte_carlo_returns(
         )
 
     if include_bootstrap:
-        paths = np.vstack([paths, values[None, :]])
+        # Append the observed path so the distribution is anchored to what
+        # actually happened. It must be reshaped to the simulation horizon:
+        # appending the full series alongside horizon-length paths raises a
+        # shape error whenever horizon != len(returns).
+        observed = values[:h] if h <= values.size else np.resize(values, h)
+        paths = np.vstack([paths, observed[None, :]])
 
     finals = np.prod(1.0 + paths, axis=1) - 1.0
     from quantforge.quant import risk_metrics as rm
