@@ -26,14 +26,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
 
+from quantforge.core import platform as platform_mod
 from quantforge.core.enums import ExecutionMode, KillSwitchScope, Permission
 from quantforge.core.errors import AuthorizationError, LiveTradingNotAuthorized
 from quantforge.core.timestamps import utcnow
 
-#: The authorisation file. Read-only (mode 0400) so a running process cannot
-#: rewrite its own authorisation, and owned by the operator running the gate.
+#: The authorisation file. Written read-only (mode 0400 on POSIX) so a running
+#: process cannot rewrite its own authorisation. On Windows the mode bits are
+#: advisory, so that protection does not exist there and the signature only
+#: *detects* tampering rather than *preventing* it.
+#:
+#: The location follows OS convention rather than assuming a POSIX home
+#: directory, so it resolves under ``%LOCALAPPDATA%`` on Windows and
+#: ``~/Library/Application Support`` on macOS.
 DEFAULT_AUTH_PATH = Path(
-    os.environ.get("QUANTFORGE_LIVE_AUTH", "~/.quantforge/live_authorisation.json")
+    os.environ.get("QUANTFORGE_LIVE_AUTH")
+    or (platform_mod.app_dir() / "live_authorisation.json")
 ).expanduser()
 
 
@@ -123,18 +131,29 @@ class LiveAuthorisation:
     # -- persistence ------------------------------------------------------
 
     def save(self, path: Path = DEFAULT_AUTH_PATH) -> Path:
+        """Write the authorisation record and lock it down as far as the host allows.
+
+        On POSIX the file ends up mode 0400, so a long-running process cannot
+        rewrite its own authorisation to grant itself trading permission. On
+        Windows the mode bits are largely advisory, so that protection does
+        not exist - the signature still *detects* tampering on the next check,
+        but nothing *prevents* it. The return value says which happened, so no
+        caller can report hardening that was not applied.
+        """
         path = Path(path).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
-        # Re-writable only by the owner who is *creating* it, then locked
-        # read-only. A long-running process that can rewrite its own
-        # authorisation can grant itself permission to trade; the operator
-        # performing the activation must be able to create and replace it.
         if path.exists():
-            path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+            # Re-writable only by whoever is *creating* the record.
+            try:
+                path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+            except OSError:
+                pass
         path.write_text(json.dumps(self.to_dict(), indent=2))
-        # Read-only for the owner after writing.
-        path.chmod(stat.S_IRUSR)
+        self.last_write_protection = platform_mod.make_read_only(path)
         return path
+
+    #: Populated by :meth:`save`; see the return contract there.
+    last_write_protection: dict = field(default_factory=dict)
 
     @staticmethod
     def load(path: Path = DEFAULT_AUTH_PATH) -> Optional["LiveAuthorisation"]:

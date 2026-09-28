@@ -325,57 +325,25 @@ class StrategySandbox:
     def apply_process_limits(self) -> dict:
         """Apply CPU/memory limits to the *current* process.
 
-        Uses ``resource.setrlimit`` where available. The address-space limit is
-        deliberately not set to a hard RLIMIT_AS on platforms where numpy's
-        allocator reserves virtual address space eagerly, which would make
-        legitimate numerical code fail at import.
+        Delegates to :mod:`quantforge.core.platform`, which reports what was
+        skipped rather than pretending. On Windows these limits do not exist,
+        and a caller that believed otherwise would be relying on a sandbox
+        that does not sandbox.
         """
-        import resource as _resource
+        from quantforge.core import platform as _platform
 
-        applied: dict[str, Any] = {}
-        try:
-            soft_cpu = int(self.max_cpu_seconds)
-            _resource.setrlimit(_resource.RLIMIT_CPU, (soft_cpu, soft_cpu + 5))
-            applied["cpu_seconds"] = soft_cpu
-        except (ValueError, OSError, AttributeError) as exc:
-            applied["cpu_error"] = str(exc)
-        try:
-            limit_bytes = self.max_memory_mb * 1024 * 1024
-            cur_soft, cur_hard = _resource.getrlimit(_resource.RLIMIT_AS)
-            new_hard = cur_hard if cur_hard != _resource.RLIM_INFINITY else limit_bytes
-            _resource.setrlimit(_resource.RLIMIT_AS, (limit_bytes, new_hard))
-            applied["address_space_mb"] = self.max_memory_mb
-        except (ValueError, OSError, AttributeError) as exc:
-            applied["memory_error"] = str(exc)
-        try:
-            _resource.setrlimit(
-                _resource.RLIMIT_NOFILE, (64, 64)
-            )
-            applied["open_files"] = 64
-        except (ValueError, OSError, AttributeError) as exc:
-            applied["fd_error"] = str(exc)
-        try:
-            _resource.setrlimit(
-                _resource.RLIMIT_FSIZE, (self.max_output_bytes, self.max_output_bytes)
-            )
-            applied["file_size_bytes"] = self.max_output_bytes
-        except (ValueError, OSError, AttributeError) as exc:
-            applied["fsize_error"] = str(exc)
-        return applied
+        return _platform.set_resource_limits(
+            max_cpu_seconds=self.max_cpu_seconds,
+            max_address_space_mb=self.max_memory_mb,
+            max_open_files=64,
+            max_file_size_mb=self.max_output_bytes / (1024 * 1024),
+        )
 
     def remove_process_limits(self) -> None:
         """Restore limits. Only for a controlled shutdown path."""
-        import resource as _resource
+        from quantforge.core import platform as _platform
 
-        for res, value in (
-            (_resource.RLIMIT_CPU, _resource.RLIM_INFINITY),
-            (_resource.RLIMIT_AS, _resource.RLIM_INFINITY),
-            (_resource.RLIMIT_FSIZE, _resource.RLIM_INFINITY),
-        ):
-            try:
-                _resource.setrlimit(res, (value, value))
-            except (ValueError, OSError, AttributeError):
-                continue
+        _platform.clear_resource_limits()
 
     def enforce_wall_timeout(self, fn, *args, **kwargs):
         """Run ``fn`` with a wall-clock timeout.
@@ -408,7 +376,10 @@ class StrategySandbox:
         return box.get("result")
 
     def describe(self) -> dict:
-        return {
+        from quantforge.core import platform as _platform
+
+        p = _platform.current()
+        out = {
             "max_cpu_seconds": self.max_cpu_seconds,
             "max_wall_seconds": self.max_wall_seconds,
             "max_memory_mb": self.max_memory_mb,
@@ -416,6 +387,10 @@ class StrategySandbox:
             "network": "denied",
             "filesystem_writes": "denied",
             "blocked_module_count": len(self.BLOCKED_MODULES),
+            "host": p.name,
+            "resource_limits_supported": p.supports_resource_limits,
+            "wall_clock_timeout_supported": True,
+            "static_screening_supported": True,
             "boundary_note": (
                 "These in-process limits are defence in depth, not a security "
                 "boundary. Running untrusted strategies requires container or "
@@ -424,3 +399,12 @@ class StrategySandbox:
                 "interpreter."
             ),
         }
+        if not p.supports_resource_limits:
+            out["degraded_note"] = (
+                "This host has no POSIX resource limits, so CPU and memory are "
+                "NOT bounded by the OS here. Static source screening and the "
+                f"wall-clock timeout ({self.max_wall_seconds}s) still apply, "
+                "which is a weaker guarantee than on Linux or macOS. Use "
+                "container isolation if the memory bound matters."
+            )
+        return out

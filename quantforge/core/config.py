@@ -16,8 +16,18 @@ from typing import Any, Optional
 
 from quantforge.core.enums import SlippageModel
 from quantforge.core.errors import ConfigurationError
+from quantforge.core.platform import app_dir as platform_app_dir
 
-DEFAULT_ROOT = Path(os.environ.get("QUANTFORGE_HOME", Path.cwd() / ".quantforge"))
+#: Resolved through :mod:`quantforge.core.platform` rather than ``Path.cwd()``.
+#:
+#: The previous default baked the *current working directory* at import time,
+#: which has two problems: the location moves if the process later changes
+#: directory, and on Windows the conventional per-user location for application
+#: data is not the working directory at all. ``platform.app_dir()`` honours
+#: ``QUANTFORGE_HOME`` first, then falls back to the OS convention
+#: (``%LOCALAPPDATA%`` on Windows, ``~/Library/Application Support`` on macOS,
+#: ``$XDG_DATA_HOME`` or ``~/.local/share`` on Linux).
+DEFAULT_ROOT = platform_app_dir()
 
 
 # --------------------------------------------------------------------------
