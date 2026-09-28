@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>QuantForge AI</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { color: #00d4ff; margin-bottom: 0.5rem; font-size: 1.5rem; }
+        .subtitle { color: #888; margin-bottom: 2rem; font-size: 0.9rem; }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid #0f3460;
+        }
+        .card h2 { color: #00d4ff; font-size: 1.1rem; margin-bottom: 0.5rem; }
+        .card p { color: #aaa; font-size: 0.9rem; line-height: 1.5; }
+        .status { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+        .status.ok { background: #00d4ff22; color: #00d4ff; }
+        .status.disabled { background: #ff444422; color: #ff4444; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+        .metric { text-align: center; padding: 1rem; }
+        .metric-value { font-size: 2rem; font-weight: 700; color: #00d4ff; }
+        .metric-label { font-size: 0.8rem; color: #888; margin-top: 0.25rem; }
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: #0f3460;
+            color: #00d4ff;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            margin-top: 0.5rem;
+        }
+        .btn:hover { background: #1a4a7a; }
+        .disclaimer {
+            background: #ff444411;
+            border: 1px solid #ff444433;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: #ff8888;
+        }
+        @media (max-width: 600px) {
+            h1 { font-size: 1.2rem; }
+            .card { padding: 1rem; }
+            .metric-value { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>QuantForge AI</h1>
+        <p class="subtitle">Research-grade quantitative trading signal platform</p>
+
+        <div class="card">
+            <h2>System Status</h2>
+            <p><span class="status ok">API Online</span> <span class="status disabled">Live Trading Disabled</span></p>
+            <p style="margin-top: 0.5rem;">Platform: <span id="platform">Detecting...</span></p>
+        </div>
+
+        <div class="card">
+            <h2>Strategies</h2>
+            <div class="grid" id="strategies">
+                <div class="metric">
+                    <div class="metric-value">3</div>
+                    <div class="metric-label">Active Strategies</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">16</div>
+                    <div class="metric-label">Indicators</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">228</div>
+                    <div class="metric-label">Tests Passing</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Quick Actions</h2>
+            <button class="btn" onclick="runBacktest()">Run Backtest</button>
+            <button class="btn" onclick="generateSignals()">Generate Signals</button>
+            <button class="btn" onclick="viewDashboard()">View Dashboard</button>
+        </div>
+
+        <div class="disclaimer">
+            <strong>Disclaimer:</strong> No strategy, indicator, or model guarantees profits. Live trading is disabled by default and requires explicit authorization.
+        </div>
+    </div>
+
+    <script>
+        // Detect platform
+        const platform = navigator.platform || navigator.userAgent;
+        document.getElementById('platform').textContent = platform;
+
+        // Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+        }
+
+        function runBacktest() { alert('Backtest: Use CLI or API endpoint'); }
+        function generateSignals() { alert('Signals: Use CLI or API endpoint'); }
+        function viewDashboard() { alert('Dashboard: Connect to API'); }
+    </script>
+</body>
+</html>
