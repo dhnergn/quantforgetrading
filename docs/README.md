@@ -17,6 +17,7 @@ stated assumptions, not a prediction of future returns.
 | [LOOKAHEAD_BIAS.md](LOOKAHEAD_BIAS.md) | The five sources, the five defences, the machine check |
 | [DATA_LEAKAGE.md](DATA_LEAKAGE.md) | Stateful preprocessing, PCA, imputation, splits, embargo |
 | [DATA_QUALITY.md](DATA_QUALITY.md) | Validators, coverage, anomaly classification |
+| [ALTERNATIVE_DATA.md](ALTERNATIVE_DATA.md) | **Fundamentals, macro, news, social, analyst revisions** |
 
 ## Data
 
@@ -63,8 +64,9 @@ thinking a topic is undocumented.
 | Technical indicators | `quant/indicators.py` | this table |
 | Corporate actions, survivorship | `data/corporate_actions.py` | [CORPORATE_ACTIONS.md](CORPORATE_ACTIONS.md) |
 | Feature store, availability | `features/` | [FEATURE_STORE.md](FEATURE_STORE.md) |
-| Fundamentals, macro, sentiment | `core/timestamps.md` availability model | [TIMESTAMPS.md](TIMESTAMPS.md) |
-| Regime detection | `ml/` clustering + `validation/splits.regime_breakdown` | this table |
+| Fundamentals | `data/fundamentals.py` | [ALTERNATIVE_DATA.md](ALTERNATIVE_DATA.md) |
+| Macro, news, social, analyst revisions | `data/alternative.py` | [ALTERNATIVE_DATA.md](ALTERNATIVE_DATA.md) |
+| Regime detection | `analysis/regime.py` | [ALTERNATIVE_DATA.md](ALTERNATIVE_DATA.md) |
 | Regression, factor, cross-sectional | `quant/regression.py` | this table |
 | Strategy engine | `strategy/` | this table |
 | Transaction costs, slippage, liquidity | `backtest/costs.py`, `liquidity.py` | [BACKTESTING.md](BACKTESTING.md) |
@@ -85,9 +87,11 @@ thinking a topic is undocumented.
 
 **Not implemented**, and stated rather than implied:
 
-- **Data vendor connectors.** No live fundamental, macro, or news feed. The
-  simulator produces synthetic data, and point-in-time fundamentals need a
-  licensed source with real publication timestamps.
+- **Data vendor connectors.** The *layer* is complete - see
+  [ALTERNATIVE_DATA.md](ALTERNATIVE_DATA.md) - and no *feed* is connected. The
+  simulator produces synthetic price data; fundamentals, macro, and news need
+  a licensed source with real publication timestamps, which is the operator's
+  to supply.
 - **Broker adapters.** Only the simulated paper broker. Wiring a real venue is
   left to the operator, deliberately — see [LIVE_TRADING.md](LIVE_TRADING.md).
 - **Web dashboards.** The FastAPI surface and PWA assets exist; no UI is built.

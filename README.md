@@ -137,12 +137,14 @@ trades is `NaN`, not infinity. Each carries a caveat explaining the condition.
 ```
 quantforge/
   core/         timestamps, instrument abstraction, config, reproducibility, errors
-  data/         corporate actions, quality validation, calendars, simulator
+  data/         corporate actions, quality, calendars, simulator,
+               fundamentals, macro, news/social/analyst with publication timing
   quant/        indicators, returns, statistics, regression, risk metrics
   features/     point-in-time store, engineering, frame builder
   strategy/     declarative conditions, versioned strategies, registry
   backtest/     event-driven engine, portfolio accounting, costs, slippage, liquidity, sizing
   portfolio/    multi-asset construction, risk parity, risk attribution
+  analysis/     market regime detection
   validation/   splits, walk-forward, Monte Carlo, sensitivity, overfitting, metrics
   ml/           models, leakage-safe preprocessing, registry, drift
   risk/         limits engine, kill switches
@@ -336,6 +338,7 @@ Bugs the suite caught during development, each with a regression test:
 | [RISK_DISCLOSURE.md](docs/RISK_DISCLOSURE.md) | **Read before using any output** |
 | [PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md) | **Host support, Windows degradations, mobile client** |
 | [PORTFOLIO_CONSTRUCTION.md](docs/PORTFOLIO_CONSTRUCTION.md) | Multi-asset allocation, risk parity, risk attribution |
+| [ALTERNATIVE_DATA.md](docs/ALTERNATIVE_DATA.md) | **Fundamentals, macro, news, analyst revisions — point-in-time** |
 
 ---
 
