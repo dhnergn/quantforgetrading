@@ -331,16 +331,17 @@ class Portfolio:
         self.trades.append(closed_trade)
 
         if remaining > 1e-12:
-            # Reversal: the residual opens a fresh position in the other
-            # direction at the fill price, rather than blending into the
-            # average entry of the position that just closed.
-            pos.quantity = signed
+            # Reversal: only the *residual* opens a fresh position. Using the
+            # full order quantity here would triple-count the shares that were
+            # just closed — selling 300 against a long 100 must leave a short
+            # 200, not a short 300.
+            pos.quantity = -remaining
             pos.average_entry_price = price
             pos.opened_at = when
             pos.entry_bar = bar_index
             pos.last_price = price
             self._open_entries[instrument_id] = [(when, price, remaining, bar_index)]
-            self.cash -= signed * price
+            self.cash += remaining * price
         return closed_trade
 
     def mark_to_market(self, prices: dict[str, float], when=None) -> None:

@@ -329,23 +329,33 @@ class PositionSizer:
     ) -> SizingResult:
         """Apply the sizing config's own bounds. Risk limits come separately."""
         cfg = self.config
+        original_qty = result.quantity
+        original_notional = result.notional
         qty = result.quantity
-        note_added = False
+
         if max_position_notional is not None and result.notional > max_position_notional:
-            qty = max_position_notional / result.notional * qty
+            scale = max_position_notional / result.notional
+            qty = qty * scale
             result.capped_by = "max_position_notional"
             result.notes = result.notes + [
-                f"reduced from {result.notional:,.0f} to the "
+                f"reduced from {original_notional:,.0f} to the "
                 f"{max_position_notional:,.0f} position limit"
             ]
-            note_added = True
+
         capped = self.apply_lot_size(qty, cfg.lot_size)
         if capped != qty and result.capped_by is None:
             result.capped_by = "lot_size"
-        result.quantity = capped
-        result.notional = abs(capped) * result.notional / abs(result.quantity) if result.quantity else 0.0
-        if not note_added and result.quantity != result.raw_quantity:
+
+        # Scale the notional by the *actual* quantity change. Recomputing it
+        # from the already-updated quantity divides the new notional by itself
+        # and silently leaves the original value in place, so the clamp reports
+        # success while the position is unchanged.
+        if original_qty != 0 and capped != original_qty:
+            scale = abs(capped) / abs(original_qty)
+            result.notional = original_notional * scale
             result.equity_fraction = result.notional / equity if equity else 0.0
+            result.risk_amount = result.risk_amount * scale
+        result.quantity = capped
         return result
 
     def _zero(self, method: str, equity: float, reason: str,
