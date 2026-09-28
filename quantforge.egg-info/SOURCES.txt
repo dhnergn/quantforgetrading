@@ -5,15 +5,3 @@ quantforge.egg-info/SOURCES.txt
 quantforge.egg-info/dependency_links.txt
 quantforge.egg-info/requires.txt
 quantforge.egg-info/top_level.txt
-tests/__init__.py
-tests/conftest.py
-tests/test_backtest.py
-tests/test_broker.py
-tests/test_data_validation.py
-tests/test_features.py
-tests/test_indicators.py
-tests/test_ingestion.py
-tests/test_integration.py
-tests/test_risk.py
-tests/test_signals.py
-tests/test_strategies.py
