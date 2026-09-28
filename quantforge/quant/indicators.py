@@ -642,20 +642,29 @@ class KeltnerChannels(Indicator):
 class RealizedVolatility(Indicator):
     """Close-to-close realised volatility, annualised.
 
-    Formula: ``RV_n = sqrt(sum_{i} (log(C_i/C_{i-1}))^2) * sqrt(bars_per_year)``
+    Formula: ``RV_n = sqrt(mean_i(logret_i^2)) * sqrt(bars_per_year)``
 
-    Log returns are used so that ``sum(log returns)`` telescopes to the log
-    price ratio, which keeps multi-period aggregation consistent.
+    The division by ``n`` inside the square root is what makes this a
+    *per-period* volatility. Omitting it yields ``sqrt(sum)``, which is the
+    realised volatility of the n-period return and is therefore larger by a
+    factor of ``sqrt(n)`` — for a 60-day window that is a 7.7x overstatement of
+    annualised risk, which then propagates into every volatility-scaled
+    position size and risk limit derived from it.
+
+    Log returns are used so multi-period aggregation is consistent: the sum of
+    squared log returns telescopes correctly with the price ratio.
     """
 
     METADATA = IndicatorMetadata(
-        name="RealizedVolatility", version="1.0.0",
-        formula="RV_n = sqrt(sum(logret^2)) * sqrt(bars_per_year)",
+        name="RealizedVolatility", version="1.1.0",
+        formula="RV_n = sqrt( mean(logret^2) ) * sqrt(bars_per_year)",
         inputs=("close",), lookback=20, warmup=21,
         missing_data_behavior="propagate_nan", time_alignment="right",
         nan_behavior="propagate", category="volatility",
         notes="Annualised by sqrt(bars_per_year) under square-root-of-time "
-              "scaling, an assumption that fails for autocorrelated returns.",
+              "scaling, an assumption that fails for autocorrelated returns. "
+              "Version 1.1.0 divides by the window length inside the square "
+              "root; 1.0.0 overstated annualised volatility by sqrt(window).",
     )
 
     def __init__(self, period: int = 20, bars_per_year: int = 252,
@@ -673,9 +682,10 @@ class RealizedVolatility(Indicator):
     def _compute(self, data: pd.DataFrame) -> pd.DataFrame:
         c = data["close"].astype(float)
         lr = np.log(c / c.shift(1))
-        # A sum of squares cannot be negative; clip guards float round-off
-        # turning into a NaN via sqrt of a tiny negative value.
-        sq = lr.pow(2).rolling(self.period, min_periods=self.period).sum().clip(lower=0.0)
+        # mean, not sum: see the class docstring. A sum of squares cannot be
+        # negative, so clip guards float round-off before the square root.
+        sq = (lr.pow(2).rolling(self.period, min_periods=self.period)
+              .mean().clip(lower=0.0))
         rv = np.sqrt(sq)
         if self.annualize:
             rv = rv * np.sqrt(self.bars_per_year)
