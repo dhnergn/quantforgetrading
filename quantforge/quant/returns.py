@@ -50,7 +50,10 @@ def simple_returns(
     if basis not in ("raw", "adjusted"):
         raise ValueError(f"basis must be 'raw' or 'adjusted', got {basis!r}")
     prices = _validate_positive(prices, "prices")
-    out = prices.pct_change(periods)
+    # fill_method=None is required: the default forward-fill was deprecated in
+    # pandas 2.1 and, worse, silently manufactures a return across a gap in the
+    # price series. A gap is missing data, not a flat price.
+    out = prices.pct_change(periods, fill_method=None)
     out.name = f"simple_return_{basis}"
     out.attrs.update({
         "basis": basis,
@@ -144,7 +147,7 @@ def rolling_return(prices: pd.Series, window: int, basis: PriceBasis = "adjusted
     approximation.
     """
     prices = _validate_positive(prices, "prices")
-    out = prices.pct_change(window)
+    out = prices.pct_change(window, fill_method=None)
     out.name = f"rolling_return_{window}_{basis}"
     out.attrs.update({"basis": basis, "window": window})
     return out
@@ -268,7 +271,9 @@ def cross_sectional_returns(
     basis: PriceBasis = "adjusted",
 ) -> pd.DataFrame:
     """Per-instrument simple returns from a wide price frame (dates x assets)."""
-    return prices.pct_change().rename_axis(index="timestamp", columns="instrument_id")
+    return prices.pct_change(fill_method=None).rename_axis(
+        index="timestamp", columns="instrument_id"
+    )
 
 
 def equal_weight_portfolio_return(asset_returns: pd.DataFrame) -> pd.Series:
