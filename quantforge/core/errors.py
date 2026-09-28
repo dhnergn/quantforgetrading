@@ -265,3 +265,36 @@ class PortfolioConstructionError(QuantForgeError):
     """
 
     code = "PORTFOLIO_CONSTRUCTION_ERROR"
+
+
+class FundamentalDataError(QuantForgeError):
+    """A fundamental observation's timing or contents are impossible.
+
+    Raised at construction rather than filtered out: a figure published before
+    its period ended, or a revision that overwrites an earlier one, is a data
+    integrity failure, and silently discarding it hides a broken feed.
+    """
+
+    code = "FUNDAMENTAL_DATA_ERROR"
+
+
+class MacroDataError(QuantForgeError):
+    """A macro observation's timing or vintage is impossible.
+
+    Raised at construction: a statistic published before its period ended, or
+    a vintage silently overwritten, is a feed integrity failure.
+    """
+
+    code = "MACRO_DATA_ERROR"
+
+
+class AlternativeDataError(QuantForgeError):
+    """A news, social, or analyst record is internally inconsistent.
+
+    The recurring shape is a timestamp that violates causality (ingested before
+    published) or a derived score with no method attached. Both are refused
+    because a sentiment score whose method is unknown cannot be interpreted,
+    compared across items, or reproduced.
+    """
+
+    code = "ALTERNATIVE_DATA_ERROR"

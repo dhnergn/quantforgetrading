@@ -17,6 +17,7 @@ PACKAGES = [
     "quantforge",
     "quantforge.core",
     "quantforge.data",
+    "quantforge.analysis",
     "quantforge.quant",
     "quantforge.features",
     "quantforge.strategy",
