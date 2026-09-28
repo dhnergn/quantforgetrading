@@ -1,0 +1,42 @@
+# QuantForge AI Configuration
+# Live trading is DISABLED by default. Do NOT enable without explicit authorization.
+
+database:
+  url: "sqlite:///./quantforge.db"
+  echo: false
+  pool_size: 5
+
+data:
+  raw_data_path: "./data/raw"
+  normalized_data_path: "./data/normalized"
+  feature_store_path: "./data/features"
+  default_source: "csv"
+
+backtest:
+  initial_capital: 100000.0
+  commission_pct: 0.001
+  slippage_pct: 0.001
+  max_position_pct: 0.20
+  max_gross_exposure: 2.0
+  max_drawdown_pct: 0.25
+
+risk:
+  max_daily_loss_pct: 0.05
+  max_portfolio_volatility: 0.20
+  var_confidence: 0.95
+  var_horizon_days: 1
+  position_sizing_method: "fixed_fractional"
+  risk_fraction: 0.01
+
+broker:
+  enabled: false  # NEVER set to true without explicit authorization
+  paper_trading: true
+  sandbox: true
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "./logs/quantforge.log"
+  audit_file: "./logs/audit.log"
+
+debug: false
