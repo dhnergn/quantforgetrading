@@ -1,108 +1,311 @@
 # QuantForge AI
 
-**Research-grade quantitative trading signal platform.**
+A research-grade quantitative trading platform: market data, feature
+engineering, indicators, strategy construction, event-driven backtesting,
+validation, risk management, paper trading, and a gated path to live
+execution.
 
-> **DISCLAIMER:** No strategy, indicator, or ML model guarantees profits or predicts markets with certainty. A profitable historical backtest is evidence about the tested historical assumptions, not proof of future profitability. Live trading is **DISABLED** by default.
+> **No strategy, indicator, or model in this platform produces guaranteed
+> profits.** A profitable backtest is evidence about the tested historical
+> period under the stated assumptions — not a prediction of future returns.
+> Financial markets are noisy, non-stationary, and adversarial. Most published
+> strategies fail out of sample.
 
-## Features
+**Live trading is disabled by default and cannot be enabled by configuration
+alone.** See [Live Trading](#live-trading-is-off-by-default).
 
-- **Signal Generation** — Generate trading signals from multiple strategies
-- **Backtesting** — Event-driven historical simulation with transaction costs and slippage
-- **Risk Management** — Position sizing, stops, portfolio constraints, VaR/CVaR
-- **Data Validation** — OHLC relationship checks, outlier detection, quality reports
-- **Paper Trading** — Simulated execution with realistic fills
-- **Broker Abstraction** — Pluggable broker adapters (live trading disabled)
+---
 
-## Quick Start
-
-### Installation
-
-```bash
-cd quantforge
-pip install -r requirements.txt
-```
-
-### Generate Signals
+## Quick start
 
 ```bash
-python -m quantforge signals --data data/AAPL.csv --strategy crossover --instruments AAPL
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -r requirements.txt
+
+.venv/bin/python -m pytest tests/ -q     # 228 tests
+.venv/bin/python scripts/demo.py         # full pipeline on synthetic data
 ```
 
-### Run Backtest
+The demo runs the whole platform offline on synthetic data. It contacts no
+network, reads no credentials, and places no orders.
 
-```bash
-python -m quantforge backtest --data data/AAPL.csv --strategy crossover --instruments AAPL --start-date 2023-01-01 --end-date 2024-01-01
+---
+
+## What the platform does
+
+```
+point-in-time data
+  -> validated features
+  -> technical / fundamental / macro / sentiment analysis
+  -> regime detection
+  -> statistical + ML models
+  -> deterministic strategy
+  -> realistic backtest (costs, slippage, liquidity)
+  -> out-of-sample validation
+  -> walk-forward + Monte Carlo + robustness
+  -> risk controls
+  -> paper trading
+  -> gated live execution
 ```
 
-### Validate Data
+---
 
-```bash
-python -m quantforge validate --data data/AAPL.csv --instrument AAPL
+## The five invariants
+
+Most quantitative platforms fail quietly. These five properties are enforced
+structurally and covered by tests, so a regression fails the build rather than
+producing a plausible-looking wrong number.
+
+### 1. No future information reaches a historical decision
+
+Every observation carries a `TemporalEnvelope` with separate `event_time`,
+`publication_time`, and `available_at` clocks. Every feature carries its own
+availability boundary. A close-derived feature computed from bar `T` is
+**not** returned at bar `T` — only at `T` plus the session close and a
+processing allowance.
+
+```python
+store.get_point_in_time("EQ001", decision_time, ["close"])
 ```
 
-### Start API Server
+The backtest engine computes a signal on bar `T` and fills on bar `T+1`. A
+truncated run reproduces the full run's prefix exactly, which is the machine
+check on causality:
 
-```bash
-python -m quantforge api
-# or
-uvicorn quantforge.api.main:create_app --factory --host 0.0.0.0 --port 8000
+```python
+# tests/test_leakage.py
+diff = (partial_equity - full_equity_prefix).abs().max()
+assert diff == 0.0
 ```
 
-## Strategies
+### 2. Preprocessing is fitted only on training data
 
-| Strategy | Type | Description |
-|---|---|---|
-| `crossover` | Trend Following | EMA(12)/EMA(26) crossover with volume confirmation |
-| `mean_reversion` | Mean Reversion | RSI extremes with Bollinger Band filter |
-| `breakout` | Breakout | SMA breakout with volume and ATR confirmation |
+Scalers, imputers, variance filters, correlation filters, and PCA are all
+stateful: `fit` on the training window, `transform` anywhere. The pipeline
+refuses to refit, refuses to transform before fitting, and can audit every
+step's fit window:
+
+```python
+assert_no_future_fit(pipeline, train_index)   # raises if a step saw the future
+```
+
+`TrainPCA` rejects NaN and rejects more features than observations. A
+full-dataset fit is detected and reported as a leakage violation.
+
+### 3. The risk engine can veto the strategy
+
+Limits are hard ceilings evaluated against the **post-fill** portfolio state.
+A limit that an order cannot breach is not a limit.
+
+```python
+verdict = risk_engine.check_order(portfolio, "AAPL", "long", 500, 150.0)
+if not verdict.approved:
+    order.status = REJECTED   # the strategy has no override
+```
+
+### 4. Live trading cannot be switched on by a flag
+
+Activation requires an HMAC-signed authorisation record on disk, written
+read-only, covering eleven explicit confirmations, unexpired, and matching the
+running strategy version, model version, portfolio, and risk-limit hash. Every
+failure mode — missing file, unsigned, tampered, expired, mismatched — refuses.
+
+### 5. An undefined metric is NaN, never zero
+
+Zero volatility gives an infinite Sharpe, not a zero one. A constant series
+correlating with nothing is `NaN`, not `0`. A profit factor with no losing
+trades is `NaN`, not infinity. Each carries a caveat explaining the condition.
+
+---
 
 ## Architecture
 
 ```
-DATA → FEATURES → STRATEGIES → SIGNALS → BACKTESTING → RISK → PAPER TRADING
-```
-
-- **Data Layer** — Immutable raw data, normalized storage, point-in-time access
-- **Feature Engine** — Versioned features with full provenance
-- **Strategy Engine** — Deterministic signal generation from conditions
-- **Backtest Engine** — Event-driven simulation with costs and slippage
-- **Risk Engine** — Position sizing, stops, portfolio constraints (authoritative)
-- **Signal Generator** — Core signal bot logic with full logging
-
-## Project Structure
-
-```
 quantforge/
-├── quantforge/           # Main package
-│   ├── api/              # FastAPI REST API
-│   ├── backtest/         # Event-driven backtesting engine
-│   ├── broker/           # Broker abstraction (paper trading)
-│   ├── data/             # Data ingestion and validation
-│   ├── features/         # Feature engineering engine
-│   ├── indicators/       # Technical indicator library
-│   ├── models/           # Database models
-│   ├── risk/             # Risk engine (position sizing, stops, limits)
-│   ├── signals/          # Signal generation (core signal bot)
-│   └── strategies/       # Strategy engine
-├── data/                 # Data files
-├── logs/                 # Log files
-├── tests/                # Test suite
-├── config.yaml           # Configuration
-├── requirements.txt      # Dependencies
-└── README.md             # This file
+  core/         timestamps, instrument abstraction, config, reproducibility, errors
+  data/         corporate actions, quality validation, calendars, simulator
+  quant/        indicators, returns, statistics, regression, risk metrics
+  features/     point-in-time store, engineering, frame builder
+  strategy/     declarative conditions, versioned strategies, registry
+  backtest/     event-driven engine, portfolio, costs, slippage, liquidity, sizing
+  validation/   splits, walk-forward, Monte Carlo, sensitivity, overfitting, metrics
+  ml/           models, leakage-safe preprocessing, registry, drift
+  risk/         limits engine, kill switches
+  execution/    broker abstraction, paper broker, orders, reconciliation, live gate
+  monitoring/   latency, signal/execution logs, alerts
+  security/     RBAC, audit chain, strategy sandbox
+  persistence/  SQLAlchemy models and repositories
+  api/          FastAPI application
 ```
 
-## Live Trading
+The domains are separate. The data layer cannot be reached from the execution
+layer except through the feature store, and the feature store will not return
+a value that was unavailable at the requested time.
 
-**Live trading is DISABLED.** This platform is for research and signal generation only. The broker abstraction supports live trading, but it requires:
+---
 
-1. Explicit authorization
-2. Broker credentials in a secure vault
-3. Risk limits configured
-4. Kill switch configured
-5. Paper trading validation completed
-6. Multiple approval checkpoints
+## Core design decisions
 
-## License
+**Raw data is never modified.** Corporate actions are applied as factors at
+read time. A 2-for-1 split restates *prior* bars — applying the factor forward
+instead would invent a −75% move at every split, which was a real bug caught
+by the test suite.
 
-Proprietary. For research use only.
+**Ambiguity is reported, not resolved.** Indicator metadata is self-verified
+(`validate_metadata()` compares every declared warmup against observed
+behaviour). Anomalies are classified as data-quality, market-event, or
+potential-outlier, and never silently deleted.
+
+**The simulator injects no exploitable structure.** `MarketSimulator`
+produces a GARCH process with Student-t shocks: volatility clustering, fat
+tails, and no momentum. A strategy that profits on it is profiting on noise.
+
+**Undefined is a real answer.** VaR with 12 observations returns `NaN` with
+"12 observations; 30 required" rather than a confident-looking number.
+
+---
+
+## Safety architecture
+
+| Concern | Mechanism |
+|---|---|
+| Duplicate orders | Deterministic idempotency keys; durable DB dedupe; state machine forbids UNKNOWN → SUBMITTED |
+| Unknown order state | Reconcile, never retry; unmapped broker states escalate rather than resolve |
+| Stale market data | New orders blocked beyond a configured threshold |
+| Position mismatch | Trading state becomes `REQUIRES_RECONCILIATION`; corrections are explicit |
+| Runaway loss | Daily-loss, drawdown, and volatility kill switches, global and scoped |
+| Secret exposure | Credentials never enter the frontend, logs, or model prompts |
+| Untrusted code | AST-screened strategy sandbox; explicitly documented as not a security boundary |
+| Audit tampering | Hash-chained, HMAC-signed, append-only log with chain verification |
+
+---
+
+## Live trading is off by default
+
+```python
+from quantforge.execution.live_gate import LiveTradingGate
+permitted, reason = LiveTradingGate().check()
+# False — "no live-trading authorisation found ... which is the default
+#          and intended state"
+```
+
+An operator must construct a signed record confirming all eleven
+preconditions, including broker connection, credentials validated, risk limits
+configured, kill switches configured, position reconciliation passed, strategy
+and model versions locked, paper trading reviewed, explicit permission
+granted, and an explicit confirmation phrase.
+
+Three independent barriers guard this: a signed file, MFA-required role
+checks, and the API endpoint refusing without all of the above. The model
+registry cannot grant trading permission — it only marks a model
+`live_eligible`.
+
+### Wiring your own broker
+
+The broker layer is an abstract interface, and **no broker adapter is
+included**. Connect your own:
+
+```python
+from quantforge.execution.brokers.base import BrokerAdapter, Account, OrderAck
+
+class MyBrokerAdapter(BrokerAdapter):
+    name = "my_broker"
+    mode = ExecutionMode.SANDBOX          # never LIVE without the gate
+
+    def _do_connect(self) -> None: ...
+    def _do_submit(self, order) -> OrderAck: ...
+    def get_order(self, client_order_id): ...   # used to resolve UNKNOWN
+    # ... remaining abstract methods
+```
+
+`PaperBrokerAdapter` is provided and fully functional for backtest and
+paper-trading realism. Live execution requires you to supply a sandbox adapter
+first and validate it before any production adapter is contemplated.
+
+---
+
+## Validation is the point, not the backtest
+
+The platform's tooling is deliberately weighted toward *falsification*:
+
+- **Walk-forward** with parameter-stability tracking across windows
+- **Deflated Sharpe** adjusted for the number of configurations tried
+- **Monte Carlo** with documented limits (a bootstrap cannot invent a crash)
+- **Sensitivity analysis** that distinguishes a plateau from a narrow peak
+- **Overfitting diagnostics** flagging few trades, parameter complexity,
+  OOS degradation, and cost sensitivity
+- **Regime breakdown** so a strategy is not judged only on its best regime
+
+A strategy that trips none of these can still be overfitted in ways they
+cannot detect. No automated score authorises capital.
+
+---
+
+## Testing
+
+```bash
+.venv/bin/python -m pytest tests/ -q                    # all 228
+.venv/bin/python -m pytest tests/ -m leakage -q         # causality only
+```
+
+Bugs the suite caught during development, each with a regression test:
+
+- `RealizedVolatility` overstated annualised volatility by √window
+- `split_factor_series` applied the factor forward, inventing −75% moves
+- Portfolio reversals opened the full order size as the residual position
+- `clamp_to_limits` left notional unchanged while reporting a cap
+- `RiskScaler`/Sharpe guards missed zero-volatility cases due to float residue
+- Historical VaR took the wrong tail, reporting a loss as a gain
+- Student-t VaR was *less* conservative than normal due to a wrong scale factor
+- Student-t and Monte-Carlo ES averaged over the wrong side of the distribution
+- `monte_carlo_returns` crashed whenever `horizon != len(returns)`
+- The GARCH simulator omitted `omega`, so variance decayed to zero
+- A falsy-but-valid `FeatureSet` was silently replaced, breaking every write
+
+---
+
+## Limitations
+
+- **No data vendor is included.** `MarketSimulator` produces synthetic data.
+  Point-in-time fundamentals, macro vintages, and analyst revisions need a
+  licensed source with real publication timestamps.
+- **No broker adapter is included** (see above).
+- **Intraday execution realism is basic.** The fill model handles gaps,
+  partial fills, and participation caps, but not queue position, order-book
+  depth, or adverse selection.
+- **The strategy sandbox is not a security boundary.** It is defence in depth.
+  Running untrusted code requires container or microVM isolation.
+- **The API has no frontend.** Dashboards are out of scope; the FastAPI app
+  exposes the research and operational surface.
+- **`us_equity_holidays` is approximate.** A production deployment must load
+  the exchange's authoritative calendar.
+
+---
+
+## Documentation
+
+`docs/` covers the architecture in detail:
+
+| Document | Covers |
+|---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and domain boundaries |
+| [TIMESTAMPS.md](docs/TIMESTAMPS.md) | Temporal semantics and the decision chain |
+| [LOOKAHEAD_BIAS.md](docs/LOOKAHEAD_BIAS.md) | Prevention mechanisms and tests |
+| [DATA_LEAKAGE.md](docs/DATA_LEAKAGE.md) | Preprocessing and model leakage |
+| [CORPORATE_ACTIONS.md](docs/CORPORATE_ACTIONS.md) | Splits, dividends, survivorship |
+| [FEATURE_STORE.md](docs/FEATURE_STORE.md) | Point-in-time feature storage |
+| [BACKTESTING.md](docs/BACKTESTING.md) | The event-driven engine |
+| [RISK_ENGINE.md](docs/RISK_ENGINE.md) | Limits, sizing, kill switches |
+| [EXECUTION.md](docs/EXECUTION.md) | Orders, reconciliation, brokers |
+| [LIVE_TRADING.md](docs/LIVE_TRADING.md) | The authorisation gate |
+| [SECURITY.md](docs/SECURITY.md) | Auth, audit, sandbox |
+| [TESTING.md](docs/TESTING.md) | Test strategy and coverage |
+| [RISK_DISCLOSURE.md](docs/RISK_DISCLOSURE.md) | **Read before using any output** |
+
+---
+
+## Licence and intended use
+
+Research and educational use. You are responsible for compliance with every
+regulation that applies to your use of this software. Nothing here is
+investment advice.
