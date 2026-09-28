@@ -9,14 +9,16 @@ README = (ROOT / "README.md").read_text(encoding="utf-8")
 #: The packages that make up the platform. Listed explicitly rather than via
 #: find_packages() so that a stray directory cannot silently become part of the
 #: distributed package.
+#: The packages that make up the platform. Listed explicitly rather than via
+#: find_packages() so that a stray directory cannot silently become part of the
+#: distributed package. Every entry is asserted to exist by the packaging test,
+#: so a stale entry fails the build rather than the install.
 PACKAGES = [
     "quantforge",
     "quantforge.core",
     "quantforge.data",
     "quantforge.quant",
     "quantforge.features",
-    "quantforge.indicators",
-    "quantforge.strategies",
     "quantforge.strategy",
     "quantforge.backtest",
     "quantforge.validation",

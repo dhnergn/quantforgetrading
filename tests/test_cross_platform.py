@@ -65,24 +65,105 @@ class TestPlatformDetection:
 
 
 class TestCrossPlatformImports:
-    """Test that all modules import correctly across platforms."""
+    """Test that all modules import correctly across platforms.
+
+    These point at the canonical modules: ``quantforge.quant.indicators``
+    (22 self-verifying indicators) and ``quantforge.strategy.builder``
+    (versioned strategies). An earlier duplicate pair of packages,
+    ``quantforge.indicators`` and ``quantforge.strategies``, was removed; see
+    ``_legacy_scaffold/README.md``. Those had no capability the canonical
+    modules lack, and their ``RSI.calculate()`` returned the whole input frame
+    with the OHLC columns overwritten by the indicator value.
+    """
 
     def test_indicators_import(self):
-        from quantforge.indicators import SMA, EMA, RSI, MACD, BollingerBands, ATR
+        from quantforge.quant.indicators import (
+            ATR, EMA, MACD, RSI, SMA, BollingerBands,
+        )
         assert SMA is not None
+        # The canonical set is self-verifying; the duplicate was not.
+        from quantforge.quant.indicators import validate_metadata
+        assert validate_metadata() == []
 
     def test_strategies_import(self):
-        from quantforge.strategies import CrossoverStrategy, MeanReversionStrategy, BreakoutStrategy
-        assert CrossoverStrategy is not None
+        from quantforge.strategy.builder import (
+            bollinger_mean_reversion_strategy, rsi_mean_reversion_strategy,
+            sma_crossover_strategy,
+        )
+        assert sma_crossover_strategy(20, 50).strategy_id == "sma_cross"
+        assert rsi_mean_reversion_strategy() is not None
+        assert bollinger_mean_reversion_strategy() is not None
+
+    def test_duplicate_module_paths_are_gone(self):
+        """One implementation per concern, so the two cannot drift.
+
+        Two packages that both answered `RSI` produced two `calculate()`
+        contracts, and the malformed one imported fine.
+        """
+        import importlib.util as u
+
+        for shadow in ("quantforge.indicators", "quantforge.strategies"):
+            assert u.find_spec(shadow) is None, (
+                f"{shadow} reappeared and would shadow the canonical module"
+            )
 
     def test_risk_import(self):
         from quantforge.risk.limits import RiskLimits
         from quantforge.risk.kill_switch import KillSwitch
         assert RiskLimits is not None
+        assert KillSwitch is not None
 
     def test_core_import(self):
         from quantforge.core.platform import get_platform, get_app_data_dir
         assert get_platform is not None
+        assert get_app_data_dir is not None
+
+
+class TestPackaging:
+    """A stale PACKAGES entry fails the install, so it must fail the build."""
+
+    def test_every_declared_package_exists(self):
+        import ast
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        tree = ast.parse((root / "setup.py").read_text())
+        packages = None
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and getattr(
+                node.targets[0], "id", ""
+            ) == "PACKAGES":
+                packages = [e.value for e in node.value.elts]
+                break
+        assert packages, "setup.py declares no PACKAGES"
+        missing = [
+            p for p in packages
+            if not (root / p.replace(".", "/") / "__init__.py").exists()
+        ]
+        assert not missing, f"PACKAGES lists non-existent packages: {missing}"
+
+    def test_every_real_package_is_declared(self):
+        """The inverse: a real package missing from PACKAGES ships nowhere."""
+        import ast
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        tree = ast.parse((root / "setup.py").read_text())
+        declared = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and getattr(
+                node.targets[0], "id", ""
+            ) == "PACKAGES":
+                declared = {e.value for e in node.value.elts}
+                break
+        pkg_root = root / "quantforge"
+        actual = {"quantforge"}
+        for child in pkg_root.iterdir():
+            if child.is_dir() and (child / "__init__.py").exists():
+                actual.add(f"quantforge.{child.name}")
+        assert not (actual - declared), (
+            f"real packages absent from setup.py PACKAGES: {sorted(actual - declared)}"
+        )
 
 
 class TestPWAFiles:
