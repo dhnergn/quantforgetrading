@@ -145,7 +145,11 @@ def compute_metrics(
     m = PerformanceMetrics(periods_per_year=periods_per_year)
     r = pd.Series(returns).astype("float64").dropna()
     m.n_periods = int(len(r))
-    m.years = m.n_periods / periods_per_year if periods_per_year else 0.0
+    # Measured from the index dates when present. A subsampled or non-daily
+    # return series has fewer points than it has periods, so
+    # n_periods / periods_per_year understates the elapsed time and inflates
+    # every compound growth rate derived from it.
+    m.years = rm.elapsed_years(r, periods_per_year) if periods_per_year else 0.0
 
     if r.empty:
         m.warnings.append("no return observations: every metric is undefined")
@@ -342,7 +346,9 @@ def compare_to_benchmark(
     total_s = float(eq_s.iloc[-1] - 1.0)
     total_b = float(eq_b.iloc[-1] - 1.0)
 
-    yrs = n / periods_per_year
+    # Elapsed time from the index, not from the observation count: see the note
+    # in compute_performance_metrics.
+    yrs = rm.elapsed_years(joined["strategy"], periods_per_year)
     cagr_s = float(eq_s.iloc[-1] ** (1 / yrs) - 1.0) if yrs > 0 else float("nan")
     cagr_b = float(eq_b.iloc[-1] ** (1 / yrs) - 1.0) if yrs > 0 else float("nan")
 

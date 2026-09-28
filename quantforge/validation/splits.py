@@ -385,9 +385,11 @@ def _aggregate_walkforward(oos: pd.Series, windows: list[WalkForwardWindow]) -> 
 
 
 def _cagr(equity: pd.Series, n: int) -> float:
+    from quantforge.quant import risk_metrics as rm
+
     if n <= 0 or equity.empty or equity.iloc[-1] <= 0:
         return float("nan")
-    years = n / 252.0
+    years = rm.elapsed_years(equity, 252)
     return float(equity.iloc[-1] ** (1.0 / years) - 1.0) if years > 0 else float("nan")
 
 

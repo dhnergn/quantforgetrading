@@ -579,9 +579,50 @@ def sortino_ratio(
                        f"downside convention: {kind}")
 
 
+def elapsed_years(series, periods_per_year: int) -> float:
+    """Years a series actually spans.
+
+    ``len(series) / periods_per_year`` is only correct when the series has
+    exactly ``periods_per_year`` observations per year. It is wrong for a
+    subsampled series, for weekly data passed with ``periods_per_year=252``,
+    and for monthly data - and in each case it understates the elapsed time, so
+    any compound growth rate computed from it is inflated. Subsampling daily
+    data by 10 and passing 252 overstates the annualised return by roughly 5x,
+    because the exponent becomes 1/0.2 instead of 1/2.
+
+    Measured from the index dates when the index carries them, which is the only
+    way to know the real elapsed time. Falls back to the observation count when
+    it does not, since that is the only estimate available then - and callers
+    that report the number should say which basis they used.
+    """
+    s = series if isinstance(series, pd.Series) else pd.Series(series)
+    n = len(s)
+    if n == 0:
+        return 0.0
+    fallback = n / periods_per_year
+    try:
+        idx = pd.DatetimeIndex(s.index)
+    except (TypeError, ValueError):
+        return fallback
+    if len(idx) < 2:
+        return fallback
+    try:
+        span = (idx[-1] - idx[0]).total_seconds() / (86400.0 * 365.25)
+    except (TypeError, ValueError):
+        return fallback
+    return span if span > 0 else fallback
+
+
 def calmar_ratio(equity_or_returns, periods_per_year: int = 252,
                  is_equity: bool = True, max_years: Optional[float] = None) -> RatioResult:
-    """Annualised return divided by maximum drawdown."""
+    """Annualised return divided by maximum drawdown.
+
+    Elapsed years are measured from the index dates when present, so a weekly,
+    monthly, or subsampled series is annualised over the time it really covers
+    rather than over ``len(series) / periods_per_year``. Pass ``max_years`` to
+    override, which is the right thing to do for a series whose index is
+    synthetic and carries no real dates.
+    """
     if is_equity:
         equity = pd.Series(equity_or_returns).astype("float64").dropna()
         dd = max_drawdown(equity)
@@ -589,9 +630,13 @@ def calmar_ratio(equity_or_returns, periods_per_year: int = 252,
         if mdd is None or np.isnan(mdd) or mdd <= 0.0:
             return RatioResult(float("nan"), "calmar",
                                "zero or undefined maximum drawdown; ratio undefined.")
-        years = max_years or (len(equity) / periods_per_year)
+        years = max_years or elapsed_years(equity, periods_per_year)
         if years <= 0:
             return RatioResult(float("nan"), "calmar", "non-positive elapsed period.")
+        if float(equity.iloc[0]) <= 0:
+            return RatioResult(float("nan"), "calmar",
+                               "starting equity is not positive, so a compound "
+                               "growth rate is undefined.")
         cagr = (float(equity.iloc[-1]) / float(equity.iloc[0])) ** (1.0 / years) - 1.0
         return RatioResult(cagr / mdd, "calmar",
                            f"over {years:.2f} years, max drawdown {mdd:.2%}")
@@ -601,9 +646,10 @@ def calmar_ratio(equity_or_returns, periods_per_year: int = 252,
     mdd = dd.max_drawdown
     if not mdd or np.isnan(mdd) or mdd <= 0.0:
         return RatioResult(float("nan"), "calmar", "zero drawdown; undefined.")
-    years = max_years or (len(r) / periods_per_year)
+    years = max_years or elapsed_years(r, periods_per_year)
     cagr = float(wealth.iloc[-1]) ** (1.0 / years) - 1.0
-    return RatioResult(cagr / mdd, "calmar", f"max drawdown {mdd:.2%}")
+    return RatioResult(cagr / mdd, "calmar",
+                       f"over {years:.2f} years, max drawdown {mdd:.2%}")
 
 
 def profit_factor(trade_pnls) -> RatioResult:
