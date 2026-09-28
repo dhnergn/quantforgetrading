@@ -17,6 +17,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator, Optional, Sequence
 
+from quantforge.core.timestamps import utcnow
+
 from sqlalchemy import (
     JSON, Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, Index,
     Integer, String, Text, UniqueConstraint, create_engine, func,
@@ -28,6 +30,24 @@ from sqlalchemy.orm import (
 
 class Base(DeclarativeBase):
     pass
+
+
+# ==========================================================================
+# Timestamp columns
+# ==========================================================================
+#
+# Every timestamp column here is written timezone-aware, by ``utcnow``. SQLite
+# has no native ``timestamptz``: the offset is stored as text and is **not**
+# restored on read, so a value written as ``datetime(...,tzinfo=UTC)`` comes
+# back **naive** in UTC.
+#
+# That asymmetry is a trap, because comparing a naive column value against an
+# aware in-memory value raises ``TypeError: can't compare offset-naive and
+# offset-aware datetimes`` rather than producing a wrong answer. A reader that
+# needs to compare must re-attach UTC with ``ensure_aware``. The alternative -
+# writing naive values, as this module did via ``datetime.utcnow`` - trades a
+# loud failure for a silent one, since a naive timestamp compared against a
+# naive local time is wrong by the machine's offset and never complains.
 
 
 # ==========================================================================
@@ -107,7 +127,7 @@ class InstrumentRow(Base):
     delisting_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     contract_spec: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     fingerprint: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class StrategyRow(Base):
@@ -126,7 +146,7 @@ class StrategyRow(Base):
     locked: Mapped[bool] = mapped_column(Boolean, default=False)
     locked_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class BacktestRow(Base):
@@ -147,7 +167,7 @@ class BacktestRow(Base):
     metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     warnings: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class OrderRow(Base):
@@ -180,11 +200,11 @@ class OrderRow(Base):
     slippage: Mapped[float] = mapped_column(Float, default=0.0)
     reject_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow,
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow,
                                                     index=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime,
-                                                    default=dt.datetime.utcnow,
-                                                    onupdate=dt.datetime.utcnow)
+                                                    default=utcnow,
+                                                    onupdate=utcnow)
 
 
 class PositionRow(Base):
@@ -205,8 +225,8 @@ class PositionRow(Base):
     #: Set when internal and broker state disagree. Trading is blocked while set.
     reconciliation_required: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime,
-                                                    default=dt.datetime.utcnow,
-                                                    onupdate=dt.datetime.utcnow)
+                                                    default=utcnow,
+                                                    onupdate=utcnow)
 
 
 class ModelRow(Base):
@@ -233,7 +253,7 @@ class ModelRow(Base):
     live_authorisation_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     #: Serialised estimator bytes. Kept out of the row's hot path.
     artifact_uri: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
 
@@ -279,7 +299,7 @@ class ExperimentRow(Base):
     config_hash: Mapped[str] = mapped_column(String(32), index=True)
     manifest: Mapped[dict] = mapped_column(JSON)
     notes: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow,
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow,
                                                     index=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 

@@ -63,7 +63,10 @@ class VaRResult:
         }
 
     def __float__(self) -> float:
-        return self.value
+        # Coerced to a plain Python float. Returning numpy.float64 from
+        # __float__ is deprecated because a strict float subclass is required
+        # to return exactly a float, and numpy scalars are not.
+        return float(self.value)
 
 
 def _losses(returns, periods: int = 1) -> np.ndarray:
@@ -288,7 +291,10 @@ class CVaRResult:
         }
 
     def __float__(self) -> float:
-        return self.value
+        # Coerced to a plain Python float. Returning numpy.float64 from
+        # __float__ is deprecated because a strict float subclass is required
+        # to return exactly a float, and numpy scalars are not.
+        return float(self.value)
 
 
 def historical_expected_shortfall(
@@ -507,7 +513,10 @@ class RatioResult:
     caveat: str = ""
 
     def __float__(self) -> float:
-        return self.value
+        # Coerced to a plain Python float. Returning numpy.float64 from
+        # __float__ is deprecated because a strict float subclass is required
+        # to return exactly a float, and numpy scalars are not.
+        return float(self.value)
 
 
 def sharpe_ratio(

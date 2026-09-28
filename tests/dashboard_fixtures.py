@@ -81,11 +81,14 @@ def build_portfolio(
     portfolio.record_equity(prices.index[-1])
 
     if with_closed_trades:
-        # A round trip so the realised-P&L component has something to show.
-        t0 = float(prices.iloc[60])
-        t1 = float(prices.iloc[120])
-        portfolio.get_or_create("AAPL", average_entry_price=t0, currency="USD")
-        portfolio.apply_fill("AAPL", "short", 400, t1, fees=2.0,
+        # Close the whole AAPL long so there is a round trip to report. Closing
+        # means filling in the *opposite* direction to the open side, so a long
+        # is closed with a short fill - and the size must be at least the open
+        # quantity or the position is only partially reduced and no Trade is
+        # recorded. ``get_or_create`` is deliberately not called again here:
+        # it would reset the entry bookkeeping the fill is about to consume.
+        exit_price = float(prices.iloc[120])
+        portfolio.apply_fill("AAPL", "short", 1_200, exit_price, fees=2.0,
                              when=prices.index[120], exit_reason="target")
 
     return portfolio
