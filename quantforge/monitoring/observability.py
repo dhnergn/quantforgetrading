@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from quantforge.core.enums import OrderSide, RiskLevel
+from quantforge.core.platform import file_lock
 from quantforge.core.timestamps import utcnow
 
 
@@ -305,7 +306,7 @@ class SignalLogger:
             if len(self._records) > self.max_records:
                 self._records = self._records[-self.max_records:]
         if self.path is not None:
-            with self._lock:
+            with self._lock, file_lock(self.path):
                 with self.path.open("a") as fh:
                     fh.write(json.dumps(rec.as_dict(), default=str) + "\n")
         return rec
@@ -389,7 +390,7 @@ class ExecutionLogger:
         }
         self._entries.append(entry)
         if self.path is not None:
-            with self._lock:
+            with self._lock, file_lock(self.path):
                 with self.path.open("a") as fh:
                     fh.write(json.dumps(entry, default=str) + "\n")
         return entry

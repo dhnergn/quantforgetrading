@@ -38,6 +38,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -51,6 +52,7 @@ __all__ = [
     "log_dir", "get_logs_dir", "config_dir", "get_config_path",
     "state_dir", "temp_dir", "get_temp_dir", "ensure_dirs",
     "make_read_only", "is_read_only", "default_bind_host", "get_optimal_workers",
+    "file_lock", "file_lock_backend",
 ]
 
 #: Guidance for the mobile case, surfaced by ``/health`` and the CLI so a user
@@ -426,6 +428,148 @@ def is_read_only(path: Path) -> bool:
     except OSError:
         return False
     return not bool(mode & (_stat.S_IWUSR | _stat.S_IWGRP | _stat.S_IWOTH))
+
+
+# ==========================================================================
+# File locking
+# ==========================================================================
+
+
+def file_lock_backend() -> str:
+    """Which locking primitive this host offers: ``fcntl``, ``msvcrt``, or none."""
+    if os.name == "nt":
+        try:
+            import msvcrt  # noqa: F401
+            return "msvcrt"
+        except ImportError:
+            return "none"
+    try:
+        import fcntl  # noqa: F401
+        return "fcntl"
+    except ImportError:
+        return "none"
+
+
+#: Per-lockfile in-process locks, so two threads in one process do not both
+#: reach for the OS primitive and contend with themselves.
+_PROCESS_LOCAL_LOCKS: dict = {}
+
+
+@contextmanager
+def file_lock(target: Path, timeout: float = 5.0, poll_interval: float = 0.01):
+    """Hold an advisory lock while writing to ``target``.
+
+    A ``threading.Lock`` protects threads inside one process. It does not
+    protect against a second *process* writing the same file, and running the
+    API and a worker as separate processes is an ordinary deployment rather
+    than an exotic one. Two writers interleaving half a JSON line corrupt the
+    audit trail, which is exactly the record that has to be trustworthy.
+
+    A sidecar ``<target>.lock`` is used rather than locking the target itself,
+    so the lock survives a rotation that replaces the target.
+
+    Degrades honestly: where a host offers no primitive, threads are still
+    serialised but the result says the lock does **not** cover other processes.
+    """
+    import threading
+    import time
+
+    target = Path(target)
+    lock_path = target.with_name(target.name + ".lock")
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        yield {"locked": False, "backend": "none", "detail": f"mkdir failed: {exc}"}
+        return
+
+    backend = file_lock_backend()
+    thread_lock = _PROCESS_LOCAL_LOCKS.setdefault(str(lock_path), threading.Lock())
+    if not thread_lock.acquire(timeout=max(0.0, timeout)):
+        raise TimeoutError(
+            f"timed out after {timeout}s waiting for the in-process lock on "
+            f"{lock_path.name}"
+        )
+
+    handle = None
+    try:
+        try:
+            handle = open(lock_path, "a+b")
+        except OSError as exc:
+            yield {"locked": False, "backend": "none", "detail": str(exc)}
+            return
+
+        if backend == "fcntl":
+            import fcntl
+
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"timed out after {timeout}s acquiring an fcntl lock "
+                            f"on {lock_path.name}"
+                        )
+                    time.sleep(poll_interval)
+            try:
+                yield {"locked": True, "backend": "fcntl", "detail": None}
+            finally:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+
+        elif backend == "msvcrt":
+            import msvcrt
+
+            # msvcrt.locking locks a byte range from the current position, so
+            # the target region must exist: a zero-length file cannot be
+            # locked, which is why a byte is written first.
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"timed out after {timeout}s acquiring an msvcrt "
+                            f"lock on {lock_path.name}"
+                        )
+                    time.sleep(poll_interval)
+            try:
+                yield {"locked": True, "backend": "msvcrt", "detail": None}
+            finally:
+                try:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+
+        else:
+            yield {
+                "locked": False,
+                "backend": "none",
+                "detail": (
+                    "this host provides no file-locking primitive, so the lock "
+                    "serialises threads only and does NOT protect against a "
+                    "second process writing the same file"
+                ),
+            }
+    finally:
+        if handle is not None:
+            try:
+                handle.close()
+            except OSError:
+                pass
+        thread_lock.release()
 
 
 # ==========================================================================

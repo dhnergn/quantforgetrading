@@ -29,6 +29,7 @@ import pandas as pd
 
 from quantforge.core.enums import AuditAction
 from quantforge.core.errors import SandboxViolation
+from quantforge.core.platform import file_lock
 from quantforge.core.timestamps import utcnow
 
 GENESIS = "0" * 64
@@ -126,8 +127,13 @@ class AuditLog:
             self._entries.append(entry)
             self._last_hash = entry.entry_hash
             if self.path is not None:
-                with self.path.open("a") as fh:
-                    fh.write(json.dumps(entry.as_dict(), default=str) + "\n")
+                # Locked across processes, not just threads: the API and a
+                # worker are commonly separate processes writing one audit
+                # trail, and two writers interleaving half a line corrupts the
+                # record that has to be trustworthy.
+                with file_lock(self.path):
+                    with self.path.open("a") as fh:
+                        fh.write(json.dumps(entry.as_dict(), default=str) + "\n")
             return entry
 
     # -- verification -----------------------------------------------------

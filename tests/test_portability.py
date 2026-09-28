@@ -363,3 +363,94 @@ class TestMobileHostGuidance:
 
     def test_is_mobile_returns_bool_on_any_host(self):
         assert isinstance(P.is_mobile(), bool)
+
+
+# ==========================================================================
+# Cross-process file locking
+# ==========================================================================
+
+
+class TestFileLocking:
+    """The audit trail must survive two processes writing it at once.
+
+    A ``threading.Lock`` only covers one process. Running the API and a worker
+    as separate processes is ordinary, and two writers interleaving half a JSON
+    line produces a corrupt audit trail - the one record that has to be
+    trustworthy. These tests spawn real processes rather than threads, because
+    threads cannot exercise the failure they exist to prevent.
+    """
+
+    def test_backend_is_reported(self):
+        assert P.file_lock_backend() in ("fcntl", "msvcrt", "none")
+
+    def test_lock_is_reentrant_across_sequential_uses(self, tmp_path):
+        target = tmp_path / "x.log"
+        for _ in range(3):
+            with P.file_lock(target) as r:
+                assert r["locked"] is True or r["backend"] == "none"
+
+    def test_releases_the_lock_afterwards(self, tmp_path):
+        target = tmp_path / "x.log"
+        with P.file_lock(target):
+            pass
+        # A second acquisition must not block, which is the only externally
+        # visible sign the first released.
+        with P.file_lock(target, timeout=0.5) as r:
+            assert r["locked"] is True or r["backend"] == "none"
+
+    def test_two_processes_do_not_interleave(self, tmp_path):
+        """The real test: N processes appending to one audit file."""
+        import subprocess
+        import textwrap
+
+        log = tmp_path / "audit.jsonl"
+        script = textwrap.dedent(f"""
+            import sys
+            sys.path.insert(0, {str(ROOT)!r})
+            from pathlib import Path
+            from quantforge.core.platform import file_lock
+            target = Path({str(log)!r})
+            payload = "x" * 400 + "\\n"
+            for _ in range(40):
+                with file_lock(target, timeout=30.0):
+                    with target.open("a") as fh:
+                        fh.write(payload)
+        """)
+        script_path = tmp_path / "writer.py"
+        script_path.write_text(script)
+
+        procs = [
+            subprocess.Popen([sys.executable, str(script_path)],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            for _ in range(4)
+        ]
+        for p in procs:
+            out, err = p.communicate(timeout=180)
+            assert p.returncode == 0, f"writer failed: {err.decode()[-1500:]}"
+
+        lines = log.read_text().splitlines()
+        assert len(lines) == 160, f"expected 160 lines, got {len(lines)}"
+        # Interleaving would show up as a short or corrupted line.
+        assert all(len(line) == 400 for line in lines), "a line was interleaved"
+
+    def test_audit_log_uses_the_lock(self, tmp_path):
+        """The writers themselves must take the lock, not merely offer it."""
+        from quantforge.monitoring.observability import ExecutionLogger
+        from quantforge.security.audit import AuditLog
+
+        audit = AuditLog(path=tmp_path / "a.jsonl", secret=b"k" * 40)
+        audit.record("alice", "user_login")
+        assert (tmp_path / "a.jsonl").read_text().strip()
+        assert (tmp_path / "a.jsonl.lock").exists(), "no lock file was created"
+
+        ex = ExecutionLogger(path=tmp_path / "e.jsonl")
+        ex.log("o1", "signal")
+        assert (tmp_path / "e.jsonl.lock").exists()
+
+    def test_lock_degrades_honestly(self, tmp_path, monkeypatch):
+        """A host with no primitive must not claim cross-process protection."""
+        monkeypatch.setattr(P, "file_lock_backend", lambda: "none")
+        with P.file_lock(tmp_path / "y.log") as r:
+            assert r["locked"] is False
+            assert r["backend"] == "none"
+            assert "does NOT protect" in r["detail"]
