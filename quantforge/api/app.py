@@ -19,6 +19,7 @@ import os
 import uuid
 from typing import Any, Optional
 
+import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -142,6 +143,14 @@ def create_app(
         "hasher": PasswordHasher(),
         "users": users or _default_users(),
         "jobs": {},
+        #: Portfolios and instrument definitions the dashboard can read, keyed
+        #: by id. Nothing populates these automatically: a backtest job is
+        #: queued and returns a job id, not a resident portfolio, so a caller
+        #: that wants a dashboard must load a portfolio itself. That is a
+        #: deliberate gap - a job runner that kept every portfolio alive would
+        #: make the process's memory grow with every request.
+        "portfolios": {},
+        "instruments": {},
         "db_url": db_url or "sqlite:///./quantforge.db",
     })
 
@@ -236,9 +245,28 @@ def create_app(
             return user
         return guard
 
-    def rate_limited(resource: str):
+    def rate_limited(resource: str, permission: Optional[Permission] = None):
+        """Authenticate, then rate limit, then optionally check a permission.
+
+        ``permission`` exists because rate limiting alone authorises nothing.
+        Several read endpoints were originally guarded with rate limiting only,
+        which made them readable by any authenticated user regardless of role -
+        the limiter counts requests, it does not decide who may ask. Dashboard
+        reads pass ``CAN_VIEW_RISK``, since a positions-and-risk disclosure is
+        a different permission from the ability to run research.
+        """
         def guard(user: User = Depends(current_user),
                   key: str = Depends(client_key)) -> User:
+            if permission is not None:
+                try:
+                    require_permission(user, permission)
+                except AuthorizationError as exc:
+                    _STATE["audit"].record(
+                        user.username, AuditAction.ACCESS_DENIED, request_path(key),
+                        {"permission": permission.value, "resource": resource},
+                        ip_address=key,
+                    )
+                    raise HTTPException(403, str(exc)) from exc
             result = _STATE["limiter"].check(user.user_id, resource)
             if not result.allowed:
                 raise HTTPException(
@@ -252,6 +280,16 @@ def create_app(
         fwd = request.headers.get("X-Forwarded-For")
         return fwd.split(",")[0].strip() if fwd else (
             request.client.host if request.client else "unknown")
+
+    def request_path(key: str) -> str:
+        """Best-effort request path for an audit record.
+
+        ``rate_limited``'s guard has no ``Request`` in scope, and an audit
+        entry without a path is still useful for the actor, the permission, and
+        the client address, so the client key stands in rather than the record
+        being dropped.
+        """
+        return key
 
     # ======================================================================
     # Routes
@@ -437,6 +475,216 @@ def create_app(
             **result,
             "warning": "Static screening is not a security boundary. Execute "
                        "untrusted strategies only inside a container or microVM.",
+        }
+
+    # -- dashboard (blueprint Section 56) -------------------------------
+    #
+    # Read-only, and gated on CAN_VIEW_RISK rather than CAN_RESEARCH: a
+    # dashboard reports positions and risk, which is a different disclosure
+    # from a research permission. It runs under the same rate limiter as the
+    # other GETs.
+
+    @app.get("/v1/dashboard/components", tags=["dashboard"])
+    def dashboard_components(
+        user: User = Depends(
+            rate_limited("dashboard", Permission.CAN_VIEW_RISK)),
+    ):
+        """The 14 components Section 56 names, and their availability.
+
+        Returns the component list *including* the unavailable ones with their
+        reasons. A response containing only what could be computed is
+        indistinguishable from one where nothing was attempted.
+        """
+        from quantforge.analysis.dashboard import COMPONENT_ORDER
+
+        return {
+            "components": [
+                {"name": name,
+                 "description": COMPONENT_ORDER[name],
+                 "endpoint": f"/v1/dashboard/{name}"}
+                for name in COMPONENT_ORDER
+            ],
+            "note": "Each component is fetched separately so that one which "
+                    "cannot be computed does not hide the others. Unavailable "
+                    "components return 200 with available=false and a reason.",
+        }
+
+    def _resolve_portfolio(request: Request, user: User) -> Any:
+        """Resolve the portfolio named in the query, or report why it cannot.
+
+        There is no "give me whatever portfolio is loaded" path. A default would
+        hand any authorised caller whichever portfolio happened to be resident,
+        which is how a positions endpoint becomes a disclosure hole: the caller
+        never has to guess an id, they just omit the parameter.
+
+        A ``job_id`` is accepted as an alias only when it resolves to a loaded
+        portfolio, and ownership is checked first so a job id cannot be used to
+        probe for the existence of another user's portfolio.
+        """
+        portfolio_id = request.query_params.get("portfolio_id")
+        job_id = request.query_params.get("job_id")
+        if not portfolio_id and not job_id:
+            raise HTTPException(
+                400,
+                "supply portfolio_id (or a job_id whose portfolio is still "
+                "resident). This endpoint has no default portfolio on purpose: "
+                "a default would expose whichever one happened to be loaded.",
+            )
+        if job_id:
+            job = _STATE["jobs"].get(job_id)
+            if job is None:
+                raise HTTPException(404, "unknown job")
+            if job["submitted_by"] != user.username and \
+                    not user.has(Permission.CAN_VIEW_AUDIT):
+                raise HTTPException(403, "this job belongs to another user")
+            portfolio_id = portfolio_id or job.get("portfolio_id") or job_id
+        portfolios = _STATE.get("portfolios") or {}
+        portfolio = portfolios.get(portfolio_id)
+        if portfolio is None:
+            raise HTTPException(
+                404,
+                f"no portfolio {portfolio_id!r} is loaded in this process. "
+                "Portfolios live in the process that built them, so a backtest "
+                "run earlier, or in another worker, is not resident here. Load "
+                "it with register_portfolio() first.",
+            )
+        return portfolio
+
+    def _build_report(request: Request, portfolio: Any) -> Any:
+        from quantforge.analysis.dashboard import build_dashboard
+
+        raw_confidence = request.query_params.get("confidence", "0.95")
+        try:
+            confidence = float(raw_confidence)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                400,
+                f"confidence must be a number between 0 and 1, got {raw_confidence!r}",
+            )
+        if not 0.0 < confidence < 1.0:
+            # A confidence outside this range has no percentile to compute, and
+            # clamping it silently would report a VaR at a level the caller did
+            # not ask for.
+            raise HTTPException(
+                400,
+                f"confidence must be strictly between 0 and 1, got {confidence}",
+            )
+        return build_dashboard(portfolio, instruments=_STATE.get("instruments"),
+                               confidence=confidence)
+
+    @app.get("/v1/dashboard/report", tags=["dashboard"])
+    def dashboard_report(
+        request: Request,
+        user: User = Depends(rate_limited("dashboard", Permission.CAN_VIEW_RISK)),
+    ):
+        """Every available component in one response."""
+        portfolio = _resolve_portfolio(request, user)
+        report = _build_report(request, portfolio)
+        _STATE["audit"].record(
+            user.username, AuditAction.DASHBOARD_VIEWED,
+            f"dashboard/{request.query_params.get('portfolio_id')}",
+            {"components": len(report.available_components())},
+            ip_address=audit_ip(request),
+        )
+        return report.as_dict()
+
+    @app.get("/v1/dashboard/{component}", tags=["dashboard"])
+    def dashboard_component(
+        component: str, request: Request,
+        user: User = Depends(
+            rate_limited("dashboard", Permission.CAN_VIEW_RISK)),
+    ):
+        """One component, with its basis attached.
+
+        Returns 200 with ``available: false`` and a reason rather than 404. A
+        404 would tell the reader the component does not exist, when it exists
+        and could not be computed from this portfolio - a materially different
+        thing to know.
+        """
+        from quantforge.analysis.dashboard import COMPONENT_ORDER
+
+        if component not in COMPONENT_ORDER:
+            raise HTTPException(
+                404,
+                f"unknown component {component!r}; the 14 are: "
+                f"{', '.join(COMPONENT_ORDER)}",
+            )
+        portfolio = _resolve_portfolio(request, user)
+        return _build_report(request, portfolio)[component].as_dict()
+
+    @app.post("/v1/dashboard/register", tags=["dashboard"])
+    def register_portfolio(
+        payload: dict, request: Request,
+        user: User = Depends(
+            rate_limited("dashboard", Permission.CAN_VIEW_RISK)),
+    ):
+        """Make a portfolio resident so the read endpoints can serve it.
+
+        The portfolio must be supplied by the caller as an equity curve, since
+        reconstructing one from a fill list would silently disagree with the
+        engine's own accounting. Positions and trades may be supplied too; both
+        are optional and their absence is reported rather than shown as empty.
+        """
+        equity = payload.get("equity_curve")
+        if not isinstance(equity, list) or len(equity) < 2:
+            raise HTTPException(
+                400,
+                "equity_curve must be a list of at least 2 [timestamp, value] "
+                "pairs, as recorded by the portfolio engine",
+            )
+        from quantforge.backtest.portfolio import Portfolio
+
+        portfolio_id = str(payload.get("portfolio_id") or uuid.uuid4().hex[:16])
+        series = pd.Series(
+            [float(v) for _, v in equity],
+            index=pd.DatetimeIndex([pd.Timestamp(t) for t, _ in equity]),
+            name="timestamp",
+        )
+        if (series <= 0).any():
+            raise HTTPException(
+                400,
+                "equity_curve contains a non-positive value. A drawdown or "
+                "growth rate from a non-positive base is undefined, and "
+                "accepting it would produce numbers that cannot be interpreted.",
+            )
+        if not series.index.is_monotonic_increasing:
+            raise HTTPException(
+                400,
+                "equity_curve timestamps must be increasing. Sorting them here "
+                "would reorder the series the caller actually measured.",
+            )
+        portfolio = Portfolio(initial_cash=float(payload.get("initial_cash")
+                                                 or float(series.iloc[0])))
+        portfolio.equity_curve = list(zip(series.index, series.to_numpy()))
+        # ``positions`` is set to None, not left as the empty dict a fresh
+        # Portfolio carries. The components treat a missing book as
+        # *unavailable* and an empty book as *flat*, and that distinction is the
+        # whole point: reporting "no positions" for a portfolio whose positions
+        # were never supplied would tell an operator the account holds nothing.
+        portfolio.positions = None
+        portfolio.trades = None
+        _STATE["portfolios"][portfolio_id] = portfolio
+        _STATE["audit"].record(
+            user.username, AuditAction.DASHBOARD_PORTFOLIO_REGISTERED,
+            f"dashboard/{portfolio_id}",
+            {"points": len(series),
+             "first": str(series.index[0]), "last": str(series.index[-1])},
+            ip_address=audit_ip(request),
+        )
+        return {
+            "portfolio_id": portfolio_id,
+            "n_points": len(series),
+            "note": "Only the equity curve is carried by this endpoint, so the "
+                    "position, realised-P&L, exposure, and correlation "
+                    "components report themselves unavailable rather than "
+                    "showing an empty book. A supplied portfolio is not the "
+                    "same thing as a flat one.",
+            "components_now_available": _build_report(
+                request, portfolio).available_components(),
+            "components_unavailable": [
+                {"name": c.name, "reason": c.reason}
+                for c in _build_report(request, portfolio).unavailable_components()
+            ],
         }
 
     @app.exception_handler(QuantForgeError)

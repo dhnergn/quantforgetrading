@@ -417,6 +417,10 @@ class AuditAction(str, enum.Enum):
     RECONCILIATION_FAILED = "reconciliation_failed"
     USER_LOGIN = "user_login"
     USER_LOGOUT = "user_logout"
+    #: Reading the portfolio dashboard discloses positions and risk figures, so
+    #: it is auditable in its own right rather than folded into a generic read.
+    DASHBOARD_VIEWED = "dashboard_viewed"
+    DASHBOARD_PORTFOLIO_REGISTERED = "dashboard_portfolio_registered"
     AUTH_FAILURE = "auth_failure"
     ACCESS_DENIED = "access_denied"
     CONFIG_CHANGED = "config_changed"

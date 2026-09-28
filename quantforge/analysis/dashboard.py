@@ -319,6 +319,12 @@ def positions_component(portfolio: Any) -> Component:
     positions = getattr(portfolio, "positions", None)
     if positions is None:
         return _unavailable("positions", "the portfolio has no position book")
+    if not isinstance(positions, dict):
+        return _unavailable(
+            "positions",
+            f"positions is a {type(positions).__name__}, not a mapping of "
+            "instrument id to position. The dashboard cannot enumerate it, and "
+            "guessing at the shape would risk reporting the wrong holdings")
     rows = []
     for p in positions.values():
         if p.is_flat:
@@ -343,7 +349,9 @@ def positions_component(portfolio: Any) -> Component:
     if not rows:
         return Component("positions", True, "", [], 0, "",
                          "no open positions; this is a flat book, not a failure "
-                         "to read it")
+                         "to read it. An empty list here is indistinguishable "
+                         "from a portfolio whose positions were never supplied, "
+                         "so treat it as unknown rather than as zero exposure")
     return Component("positions", True, "", rows, len(rows), "",
                      "market value uses the last marked price, which is stale "
                      "between marks")
@@ -351,7 +359,14 @@ def positions_component(portfolio: Any) -> Component:
 
 def realized_pnl_component(portfolio: Any) -> Component:
     """Closed trades, and the cumulative realised P&L path."""
-    trades = list(getattr(portfolio, "trades", []) or [])
+    trades = getattr(portfolio, "trades", None)
+    if trades is None:
+        return _unavailable(
+            "realized_pnl",
+            "the portfolio carries no trade list, so realised P&L cannot be "
+            "distinguished from a portfolio that has simply never closed a "
+            "trade. Those look identical on a chart and are not the same state")
+    trades = list(trades)
     if not trades:
         return Component("realized_pnl", True, "", [], 0, "",
                          "no closed trades yet")
@@ -396,7 +411,7 @@ def exposure_component(portfolio: Any) -> Component:
     10,000 or 10,000,000.
     """
     positions = getattr(portfolio, "positions", None)
-    if positions is None:
+    if not isinstance(positions, dict):
         return _unavailable("exposure", "the portfolio has no position book")
     equity = float(portfolio.equity)
     if equity == 0:
@@ -438,7 +453,7 @@ def exposure_breakdown(
     of exposure was actually classified.
     """
     positions = getattr(portfolio, "positions", None)
-    if positions is None:
+    if not isinstance(positions, dict):
         return _unavailable(component_name, "the portfolio has no position book")
     open_positions = [p for p in positions.values() if not p.is_flat]
     if not open_positions:
@@ -768,6 +783,27 @@ def beta_component(
 # ==========================================================================
 
 
+#: The 14 components blueprint Section 56 names, in the order it lists them,
+#: with the data each needs. Also the single source of truth for the API's
+#: component index, so a component cannot be added here and forgotten there.
+COMPONENT_ORDER: dict[str, str] = {
+    "equity_curve": "Equity curve, rebased, optionally against a benchmark",
+    "daily_pnl": "Per-period P&L in currency, with the cumulative path",
+    "unrealized_pnl": "Unrealised P&L across open positions",
+    "realized_pnl": "Closed trades, net of fees, with cumulative realised P&L",
+    "exposure": "Gross, net, and leverage, each as a fraction of equity",
+    "positions": "Open positions with entry, current price, and P&L",
+    "sector_exposure": "Exposure grouped by sector, with coverage stated",
+    "asset_class_exposure": "Exposure grouped by asset class",
+    "correlations": "Correlation heatmap over the instruments held",
+    "portfolio_volatility": "Rolling annualised volatility and its window",
+    "var": "Value at Risk and expected shortfall, with confidence and n",
+    "drawdown": "Underwater curve, max drawdown, and current drawdown",
+    "summary_statistics": "Sharpe, Sortino, Calmar, and the counts behind them",
+    "beta": "Beta and alpha against a benchmark, with overlap stated",
+}
+
+
 @dataclass(slots=True)
 class DashboardReport:
     """All 14 components plus the disclosure that belongs above them."""
@@ -776,12 +812,7 @@ class DashboardReport:
     generated_at: dt.datetime = field(default_factory=dt.datetime.now)
     base_currency: str = "USD"
 
-    COMPONENT_NAMES = (
-        "equity_curve", "daily_pnl", "unrealized_pnl", "realized_pnl",
-        "exposure", "positions", "sector_exposure", "asset_class_exposure",
-        "correlations", "portfolio_volatility", "var", "drawdown",
-        "summary_statistics", "beta",
-    )
+    COMPONENT_NAMES = tuple(COMPONENT_ORDER)
 
     def __getitem__(self, key: str) -> Component:
         return self.components[key]
@@ -866,7 +897,8 @@ def build_dashboard(
     # Unrealised P&L and rolling volatility are the two components that need
     # their own inputs rather than only the portfolio.
     series = _equity_series(portfolio)
-    if series is not None and len(pd.Series(series).dropna()) >= 1:
+    has_book = isinstance(getattr(portfolio, "positions", None), dict)
+    if series is not None and len(pd.Series(series).dropna()) >= 1 and has_book:
         report.components["unrealized_pnl"] = Component(
             "unrealized_pnl", True, "",
             {
@@ -879,6 +911,12 @@ def build_dashboard(
             "unrealised P&L is marked at the last price seen, so between marks "
             "it does not reflect the current market",
         )
+    elif not has_book:
+        report.components["unrealized_pnl"] = _unavailable(
+            "unrealized_pnl",
+            "the portfolio has no position book, so there is no unrealised P&L "
+            "to report. A portfolio with an empty book would report zero; the "
+            "two are different situations and this is not the first one")
     else:
         report.components["unrealized_pnl"] = _unavailable(
             "unrealized_pnl", "the portfolio has no equity curve")
