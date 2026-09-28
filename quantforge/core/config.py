@@ -342,14 +342,78 @@ def config_to_dict(config: Config) -> dict[str, Any]:
     return out
 
 
+def _scalar(name: str, value: Any, declared: Any) -> Any:
+    """Type-check a non-section config field.
+
+    ``declared`` arrives as a string under ``from __future__ import annotations``
+    for the same reason sections need ``_RESOLVE``. A declared type of
+    ``bool`` is checked strictly, because ``bool`` subclasses ``int`` and a
+    ``PositionLimit`` of ``1`` where ``0.2`` was documented is a far more
+    dangerous mistake than a type error.
+    """
+    want = declared if isinstance(declared, type) else None
+    if want is None:
+        text = str(declared)
+        want = {"bool": bool, "int": int, "float": float, "str": str}.get(text)
+    if want is None:
+        return value                      # unrecognised annotation: pass through
+    if want is bool:
+        ok = isinstance(value, bool)
+    elif want is float:
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+    else:
+        ok = isinstance(value, want)
+    if not ok:
+        raise ConfigurationError(
+            f"configuration key {name!r} must be {want.__name__}, got "
+            f"{type(value).__name__} ({value!r})"
+        )
+    return value
+
+
 def config_from_dict(raw: dict[str, Any]) -> Config:
+    """Build a :class:`Config` from a nested mapping.
+
+    Not every field is a section: ``debug`` is a plain ``bool``. Treating it as
+    a section crashed the loader on the first config file that contained it,
+    which is the sort of failure that leaves a stale file in place for months
+    because nobody can work out why loading "does nothing".
+
+    A section given a non-mapping is also rejected rather than coerced, since
+    ``_build`` would otherwise call ``set()`` on a scalar and report the
+    resulting ``TypeError`` instead of naming the offending key.
+    """
+    if not isinstance(raw, dict):
+        raise ConfigurationError(
+            f"configuration must be a mapping of sections, got "
+            f"{type(raw).__name__}"
+        )
     kwargs: dict[str, Any] = {}
     for f in fields(Config):
-        if f.name in raw:
-            section_cls = f.type
-            if isinstance(section_cls, str):  # postponed annotation
-                section_cls = _RESOLVE[f.name]
-            kwargs[f.name] = _build(section_cls, raw[f.name] or {})
+        if f.name not in raw:
+            continue
+        declared = f.type
+        section_cls = declared
+        if isinstance(section_cls, str):  # postponed annotation
+            section_cls = _RESOLVE.get(f.name)
+        if section_cls is None or not is_dataclass(section_cls):
+            # A scalar field: pass the value through, but check its type.
+            # Without this, `debug: {typo: 1}` is accepted, the unknown-key
+            # protection that sections get is bypassed, and a mapping ends up
+            # living in a field documented as a bool. The ORIGINAL declared
+            # type is passed, not the resolved-None above, or there is nothing
+            # left to check against.
+            kwargs[f.name] = _scalar(f.name, raw[f.name], declared)
+            continue
+        value = raw[f.name]
+        if value is None:
+            value = {}
+        if not isinstance(value, dict):
+            raise ConfigurationError(
+                f"configuration section {f.name!r} must be a mapping, got "
+                f"{type(value).__name__}"
+            )
+        kwargs[f.name] = _build(section_cls, value)
     return Config(**kwargs)
 
 

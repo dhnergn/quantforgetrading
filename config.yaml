@@ -1,42 +1,208 @@
-# QuantForge AI Configuration
-# Live trading is DISABLED by default. Do NOT enable without explicit authorization.
+# QuantForge AI configuration.
+#
+# This file is validated at load time. Unknown keys are REFUSED rather than
+# ignored, because a typo that is silently dropped is a setting you believe is
+# in effect and is not:
+#
+#   ConfigurationError: DataConfig: unknown configuration keys
+#   ['raw_pathx']; refusing to silently ignore them
+#
+# Every value below is the dataclass default, written out explicitly so the
+# active configuration is reviewable in one place.
+#
+# Load with:  from quantforge.core.config import get_config
+# Verify with: get_config().fingerprint()
 
+# ---------------------------------------------------------------------------
+# Persistence. Operational state only: orders, positions, model metadata,
+# audit records. Time-series research data belongs in Parquet, not here.
+# ---------------------------------------------------------------------------
 database:
   url: "sqlite:///./quantforge.db"
   echo: false
   pool_size: 5
+  pool_timeout: 30
+  pool_recycle: 1800
 
+# ---------------------------------------------------------------------------
+# Data storage. Heavily-timestamped paths let a later load specify the vintage
+# actually available at a past date, which is what makes point-in-time
+# reconstruction possible.
+# ---------------------------------------------------------------------------
 data:
-  raw_data_path: "./data/raw"
-  normalized_data_path: "./data/normalized"
-  feature_store_path: "./data/features"
-  default_source: "csv"
+  root: "./.quantforge/data"
+  raw_path: "./.quantforge/data/raw"
+  normalized_path: "./.quantforge/data/normalized"
+  adjusted_path: "./.quantforge/data/adjusted"
+  features_path: "./.quantforge/data/features"
+  cache_path: "./.quantforge/data/cache"
+  cache_ttl_seconds: 3600
+  parquet_compression: "snappy"
+  default_timeframe: "1d"
+  default_source: "local"
+  # A stale read is a read of data the market has already superseded. Off by
+  # default: staleness is a safety property, not a convenience.
+  allow_stale_cache_reads: false
 
+# ---------------------------------------------------------------------------
+# Backtesting defaults.
+#
+# Costs are ZERO here on purpose, so that anyone who forgets to set them gets a
+# loud warning from CostModel.is_free rather than a silently optimistic
+# backtest. Set them for any result you intend to believe.
+# ---------------------------------------------------------------------------
 backtest:
   initial_capital: 100000.0
-  commission_pct: 0.001
+  base_currency: "USD"
+  default_timeframe: "1d"
+  bars_per_year: 252
+  commission_per_share: 0.0
+  commission_pct: 0.0
+  min_commission: 0.0
+  regulatory_fee_bps: 0.0
+  assume_spread_bps: 5.0
+  slippage_model: "percentage"
   slippage_pct: 0.001
-  max_position_pct: 0.20
-  max_gross_exposure: 2.0
-  max_drawdown_pct: 0.25
+  slippage_fixed: 0.0
+  max_participation_pct: 5.0
+  min_adv_to_trade: 0.0
 
+# ---------------------------------------------------------------------------
+# Risk limits. Every field is a hard ceiling evaluated against the POST-FILL
+# portfolio state; a limit an order cannot breach is not a limit.
+# ---------------------------------------------------------------------------
 risk:
-  max_daily_loss_pct: 0.05
-  max_portfolio_volatility: 0.20
+  max_position_pct: 0.20
+  max_sector_pct: 0.40
+  max_asset_class_pct: 0.80
+  max_gross_exposure: 1.00
+  max_net_exposure: 0.50
+  max_leverage: 1.00
+  max_drawdown_pct: 0.20
+  max_daily_loss_pct: 0.03
+  max_portfolio_volatility: 0.25
+  var_limit_pct: 0.05
+  cvar_limit_pct: 0.08
   var_confidence: 0.95
   var_horizon_days: 1
-  position_sizing_method: "fixed_fractional"
+  position_sizing: "fixed_fractional"
   risk_fraction: 0.01
+  # Full Kelly maximises growth AND drawdown. The estimate of the win
+  # probability is far less precise than that arithmetic implies.
+  kelly_fraction: 0.25
+  max_kelly_weight: 0.10
 
-broker:
-  enabled: false  # NEVER set to true without explicit authorization
+# ---------------------------------------------------------------------------
+# Kill switches. Conservative thresholds: halting costs a missed trade, a
+# runaway loss costs capital. An auto-engaged switch requires manual release.
+# ---------------------------------------------------------------------------
+kill_switch:
+  max_daily_loss_pct: 0.03
+  max_drawdown_pct: 0.15
+  stale_data_seconds: 300
+  max_execution_latency_ms: 2000.0
+  max_order_rejections: 5
+  reconciliation_tolerance: 0.000001
+  reconciliation_retries: 3
+  auto_engage: true
+
+# ---------------------------------------------------------------------------
+# Execution.
+#
+# live_trading_enabled is FALSE and setting it is NOT sufficient: Config.validate()
+# rejects it while sandbox_only is set, and quantforge.execution.live_gate
+# independently requires a signed, unexpired authorisation record covering all
+# eleven preconditions and matching the running strategy and model versions.
+# The flag alone cannot enable live trading.
+# ---------------------------------------------------------------------------
+execution:
+  mode: "backtest"
+  live_trading_enabled: false
   paper_trading: true
-  sandbox: true
+  sandbox_only: true
+  broker_adapter: "paper"
+  order_timeout_seconds: 30.0
+  # How long an UNKNOWN order is given to resolve. The response to a submission
+  # timeout is reconciliation, never a retry.
+  unknown_order_grace_seconds: 60.0
+  reconcile_on_unknown: true
+  require_idempotency_key: true
+  submission_dedupe_window_seconds: 300.0
 
-logging:
-  level: "INFO"
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  file: "./logs/quantforge.log"
-  audit_file: "./logs/audit.log"
+# ---------------------------------------------------------------------------
+# Security.
+#
+# The secret is read from the environment variable named by secret_env_var. It
+# is never stored in this file: a credential in a config file is a credential
+# in version control.
+# ---------------------------------------------------------------------------
+security:
+  auth_required: true
+  jwt_algorithm: "HS256"
+  jwt_ttl_seconds: 900
+  jwt_refresh_ttl_seconds: 604800
+  password_hash: "argon2"
+  rate_limit_enabled: true
+  # Explicit allow-list. Never "*" with credentials enabled.
+  cors_origins: []
+  max_request_bytes: 1048576
+  audit_enabled: true
+  secret_env_var: "QUANTFORGE_SECRET_KEY"
+
+# ---------------------------------------------------------------------------
+# Strategy sandbox. DEFENCE IN DEPTH, NOT A SECURITY BOUNDARY. In-process
+# limits are defeatable; running untrusted strategies requires container or
+# microVM isolation enforced outside the interpreter.
+# ---------------------------------------------------------------------------
+sandbox:
+  enabled: true
+  cpu_seconds: 30.0
+  wall_seconds: 60.0
+  memory_mb: 512
+  max_output_bytes: 1048576
+  network_enabled: false
+  filesystem_write_enabled: false
+  blocked_modules:
+    - "socket"
+    - "subprocess"
+    - "sqlalchemy"
+    - "requests"
+    - "pickle"
+    - "ctypes"
+
+# ---------------------------------------------------------------------------
+# Machine learning.
+# ---------------------------------------------------------------------------
+ml:
+  random_seed: 42
+  enable_gpu: false
+  max_threads: 4
+  max_train_rows: 5000000
+  early_stopping_rounds: 25
+  calibration_method: "isotonic"
+  n_jobs: 1
+
+# ---------------------------------------------------------------------------
+# Monitoring. JSONL logs: greppable, appendable without a database, and
+# crash-tolerant in a way a half-written transaction is not.
+# ---------------------------------------------------------------------------
+monitoring:
+  latency_sample_rate: 1.0
+  alert_on_p99_latency: true
+  metrics_path: "./.quantforge/logs/metrics.jsonl"
+  audit_path: "./.quantforge/logs/audit.jsonl"
+  signal_log_path: "./.quantforge/logs/signals.jsonl"
+  execution_log_path: "./.quantforge/logs/executions.jsonl"
+
+# ---------------------------------------------------------------------------
+# API. Binds to loopback by default: an authenticated trading API should not
+# be reachable from the network until someone has deliberately chosen that.
+# ---------------------------------------------------------------------------
+api:
+  host: "127.0.0.1"
+  port: 8000
+  workers: 1
+  version: "v1"
+  docs_enabled: true
 
 debug: false

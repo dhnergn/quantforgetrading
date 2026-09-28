@@ -1,44 +1,45 @@
-.PHONY: help install test run-api run-cli generate-data clean docker-build docker-run
+.PHONY: help install test test-leakage demo api config check clean docker-build docker-run
+
+VENV := .venv
+PY   := $(VENV)/bin/python
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install dependencies
-	pip install -r requirements.txt
-	pip install -e .
+install: ## Create the venv and install dependencies
+	python3 -m venv --system-site-packages $(VENV)
+	$(VENV)/bin/pip install -r requirements.txt
+	$(VENV)/bin/pip install -e .
+	@echo "installed. run 'make test'"
 
-test: ## Run all tests
-	pytest tests/ -v --tb=short
+test: ## Run the full test suite
+	$(PY) -m pytest tests/ -q
 
-run-api: ## Start the API server
-	uvicorn quantforge.api.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
+test-leakage: ## Run only the causality and leakage tests
+	$(PY) -m pytest tests/ -m leakage -q
 
-run-cli: ## Run the CLI
-	python -m quantforge
+demo: ## Run the end-to-end pipeline on synthetic data
+	$(PY) scripts/demo.py
 
-generate-data: ## Generate sample data
-	python scripts/generate_sample_data.py --symbol AAPL --output data/AAPL.csv
-	python scripts/generate_sample_data.py --symbol MSFT --output data/MSFT.csv
-	python scripts/generate_sample_data.py --symbol GOOGL --output data/GOOGL.csv
+api: ## Serve the API on 127.0.0.1:8000
+	$(VENV)/bin/uvicorn quantforge.api.app:app --host 127.0.0.1 --port 8000
 
-backtest: ## Run a sample backtest
-	python -m quantforge backtest --data data/AAPL.csv --strategy crossover --instruments AAPL --start-date 2023-02-01 --end-date 2023-12-31
+config: ## Print the loaded configuration and its fingerprint
+	$(PY) -c "from quantforge.core.config import get_config; \
+c=get_config(); print(c.fingerprint()); print('live_trading_enabled:', c.execution.live_trading_enabled)"
 
-signals: ## Generate sample signals
-	python -m quantforge signals --data data/AAPL.csv --strategy crossover --instruments AAPL
+check: ## Verify the live-trading gate is closed (expected: not permitted)
+	$(PY) -c "from quantforge.execution.live_gate import LiveTradingGate; \
+ok,why=LiveTradingGate().check(); print('permitted:', ok); print('reason:', why)"
 
-validate: ## Validate sample data
-	python -m quantforge validate --data data/AAPL.csv --instrument AAPL
+clean: ## Remove caches and generated output
+	rm -rf .pytest_cache **/__pycache__ __pycache__ .quantforge
+	rm -f quantforge.db
+	find . -name '*.pyc' -delete
 
-clean: ## Clean generated files
-	rm -rf data/*.csv
-	rm -rf logs/*.log
-	rm -rf __pycache__ */__pycache__ */*/__pycache__
-	rm -rf .pytest_cache
-	rm -rf *.db
-
-docker-build: ## Build Docker image
+docker-build: ## Build the container image
 	docker build -t quantforge-ai .
 
-docker-run: ## Run Docker container
-	docker run -p 8000:8000 quantforge-ai
+docker-run: ## Run the container (API on 127.0.0.1:8000)
+	docker run -p 127.0.0.1:8000:8000 quantforge-ai
