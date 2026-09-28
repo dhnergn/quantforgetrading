@@ -1,4 +1,4 @@
-.PHONY: help install test test-leakage demo api config check clean docker-build docker-run
+.PHONY: help install test test-leakage demo api config check host-info verify clean docker-build docker-run
 
 VENV := .venv
 PY   := $(VENV)/bin/python
@@ -32,6 +32,12 @@ c=get_config(); print(c.fingerprint()); print('live_trading_enabled:', c.executi
 check: ## Verify the live-trading gate is closed (expected: not permitted)
 	$(PY) -c "from quantforge.execution.live_gate import LiveTradingGate; \
 ok,why=LiveTradingGate().check(); print('permitted:', ok); print('reason:', why)"
+
+host-info: ## Report this host's platform capabilities
+	$(PY) scripts/bootstrap.py --host-info
+
+verify: ## Install and verify everything for this host
+	$(VENV)/bin/python scripts/bootstrap.py
 
 clean: ## Remove caches and generated output
 	rm -rf .pytest_cache **/__pycache__ __pycache__ .quantforge

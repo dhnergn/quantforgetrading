@@ -45,6 +45,7 @@ stated assumptions, not a prediction of future returns.
 | [LIVE_TRADING.md](LIVE_TRADING.md) | The authorisation gate and operator procedure |
 | [SECURITY.md](SECURITY.md) | Auth, RBAC, audit, sandbox, injection defences |
 | [TESTING.md](TESTING.md) | Test strategy, coverage, and the bugs the suite caught |
+| [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md) | **Host support: Linux, macOS, Windows; mobile as client** |
 
 ---
 

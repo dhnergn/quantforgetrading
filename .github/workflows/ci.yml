@@ -1,0 +1,114 @@
+name: CI
+
+# Windows and macOS are matrix members, not an afterthought. Most of the code
+# runs identically everywhere, and the parts that do not - POSIX resource
+# limits, read-only file modes, path conventions, the exec suffix - are
+# exactly the parts that a Linux-only pipeline would never exercise.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13"]
+        exclude:
+          # Keep the matrix affordable; every OS is still covered.
+          - { os: macos-latest, python: "3.11" }
+          - { os: macos-latest, python: "3.13" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e ".[dev,security,server]"
+
+      - name: Report host capabilities
+        run: python scripts/bootstrap.py --host-info
+
+      - name: Lint
+        run: ruff check quantforge scripts tests
+
+      - name: Tests
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: Leakage suite
+        # Run separately so a causality failure is not buried in a long log.
+        run: python -m pytest tests/ -m leakage -v
+
+      - name: Import every module
+        # Catches a module that only fails to import on one OS.
+        run: |
+          python -c "import pkgutil, importlib, quantforge; mods=[m.name for m in pkgutil.walk_packages(quantforge.__path__, 'quantforge.')]; [importlib.import_module(m) for m in mods]; print(f'imported {len(mods)} modules')"
+
+      - name: Demo end to end
+        run: python scripts/demo.py
+
+      - name: Live-trading gate is closed
+        # A build that passes while live trading is enabled verified the
+        # wrong thing.
+        run: |
+          python -c "from quantforge.execution.live_gate import LiveTradingGate; ok,why=LiveTradingGate().check(); print('permitted:',ok); print('reason:',why); raise SystemExit(1 if ok else 0)"
+
+      - name: Build a wheel and sdist
+        run: |
+          python -m pip install build
+          python -m build
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: dist
+          path: dist/
+
+  # iOS and Android are not hosts: the compute stack has no binary wheels
+  # there and iOS forbids the JIT those libraries need. This job exists to
+  # keep that answer honest by proving the *client* is importable and
+  # dependency-free, rather than leaving the question open.
+  mobile-client:
+    name: mobile client is stdlib-only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Client has no compiled dependencies
+        run: |
+          python -c "
+          import ast, sys
+          src = open('quantforge/api/mobile.py').read()
+          mods = set()
+          for n in ast.walk(ast.parse(src)):
+              if isinstance(n, ast.Import):
+                  mods.update(a.name.split('.')[0] for a in n.names)
+              elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
+                  mods.add(n.module.split('.')[0])
+          extra = {m for m in mods if m not in sys.stdlib_module_names and not m.startswith('quantforge')}
+          print('third-party deps:', extra or 'none')
+          raise SystemExit(1 if extra else 0)
+          "
+
+      - name: Client behaviour tests
+        # These import only the client, not the platform.
+        run: python -m pytest tests/test_portability.py -q -k "MobileClient"

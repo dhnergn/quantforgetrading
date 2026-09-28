@@ -81,6 +81,9 @@ class HealthResponse(BaseModel):
     trading_mode: str
     timestamp: str
     disclaimer: str = DISCLAIMER
+    #: What the *server* host supports, so a client can tell whether it is
+    #: talking to a Linux box, a Windows box, or something unsupported.
+    platform: dict = Field(default_factory=dict)
 
 
 class BacktestRequest(BaseModel):
@@ -256,7 +259,14 @@ def create_app(
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     def health() -> HealthResponse:
-        """Unauthenticated liveness probe. Reveals nothing sensitive."""
+        """Unauthenticated liveness probe. Reveals nothing sensitive.
+
+        Includes the server's platform capabilities so a mobile or remote
+        client can report what it is actually talking to - notably whether the
+        host is a supported one, since iOS and Android cannot host this
+        platform at all.
+        """
+        from quantforge.core import platform as _platform
         from quantforge.execution.live_gate import LiveTradingGate
 
         permitted, reason = LiveTradingGate().check()
@@ -266,6 +276,7 @@ def create_app(
             trading_mode=ExecutionMode.LIVE.value if permitted
             else ExecutionMode.PAPER.value,
             timestamp=utcnow().isoformat(),
+            platform=_platform.describe(),
         )
 
     @app.get("/v1/security/live-status", tags=["system"])

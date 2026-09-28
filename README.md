@@ -14,16 +14,30 @@ execution.
 **Live trading is disabled by default and cannot be enabled by configuration
 alone.** See [Live Trading](#live-trading-is-off-by-default).
 
+**Runs on Linux, macOS, and Windows. iOS and Android are supported as
+clients only** - the compute stack has no binary wheels for iOS and iOS
+forbids the JIT it needs, so mobile talks to a server rather than hosting the
+platform. See [docs/PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md).
+
 ---
 
 ## Quick start
 
 ```bash
-python3 -m venv --system-site-packages .venv
-.venv/bin/pip install -r requirements.txt
+# Linux / macOS
+./build.sh                 # one implementation, via scripts/bootstrap.py
 
-.venv/bin/python -m pytest tests/ -q     # 228 tests
+# Windows
+build.bat
+```
+
+Or run the same steps by hand:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python -m pytest tests/ -q     # 280 tests
 .venv/bin/python scripts/demo.py         # full pipeline on synthetic data
+.venv/bin/python scripts/bootstrap.py --host-info   # what this host supports
 ```
 
 The demo runs the whole platform offline on synthetic data. It contacts no
@@ -301,6 +315,7 @@ Bugs the suite caught during development, each with a regression test:
 | [SECURITY.md](docs/SECURITY.md) | Auth, audit, sandbox |
 | [TESTING.md](docs/TESTING.md) | Test strategy and coverage |
 | [RISK_DISCLOSURE.md](docs/RISK_DISCLOSURE.md) | **Read before using any output** |
+| [PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md) | **Host support, Windows degradations, mobile client** |
 
 ---
 
