@@ -51,3 +51,26 @@ So an import from this path silently returns malformed data with the right
 values in the wrong shape. This is why the archive must not be importable
 alongside the real package.
 
+## History: this directory was recreated, then removed again
+
+`quantforge/indicators/` was moved here on request, then reappeared in the live
+package over several minutes — one file at a time, with mtimes advancing while
+being observed. A concurrent process was writing it.
+
+The recreated copy restored four of the five files byte-identically but wrote
+`volatility.py` with a **regression**: `ATR.calculate` referenced the
+module-level True Range class `TR` instead of the local `tr` series.
+
+```python
+# live copy:    NameError: name 'TR' is not defined
+# this archive: 1.25
+```
+
+That is strictly worse than either previous state: the package imported
+successfully and then failed at runtime. The archived `volatility.py` is the
+correct `tr.ewm(...)` version, so removing the live copy lost nothing.
+
+**If `quantforge/indicators/` or `quantforge/strategies/` reappear in the live
+package, something else is writing to this tree.** Check for another agent or
+session working here before assuming the move did not take.
+
