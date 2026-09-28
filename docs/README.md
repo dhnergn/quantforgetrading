@@ -46,29 +46,55 @@ stated assumptions, not a prediction of future returns.
 | [SECURITY.md](SECURITY.md) | Auth, RBAC, audit, sandbox, injection defences |
 | [TESTING.md](TESTING.md) | Test strategy, coverage, and the bugs the suite caught |
 | [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md) | **Host support: Linux, macOS, Windows; mobile as client** |
+| [PORTFOLIO_CONSTRUCTION.md](PORTFOLIO_CONSTRUCTION.md) | Multi-asset allocation, risk parity, risk attribution |
 
 ---
 
-## Not yet written
+## Coverage of the blueprint
 
-The blueprint (sections 9-48 of `../BLUEPRINT.md`) specifies these domains;
-the current implementation covers the MVP path end to end. These are the
-planned documents for modules not yet built:
+`../BLUEPRINT.md` specifies more domains than this implementation covers. Rather
+than ship 31 placeholder files, the topics are listed here with where the real
+coverage lives, so a reader is not sent to a missing file or misled into
+thinking a topic is undocumented.
 
-`MARKET_DATA.md`, `TECHNICAL_INDICATORS.md`, `FUNDAMENTALS.md`,
-`MACRO_DATA.md`, `SENTIMENT.md`, `REGIME_ENGINE.md`, `REGRESSION.md`,
-`MODEL_VERSIONING.md`, `STRATEGY_ENGINE.md`, `SURVIVORSHIP_BIAS.md`,
-`TRANSACTION_COSTS.md`, `SLIPPAGE.md`, `LIQUIDITY.md`, `POSITION_SIZING.md`,
-`VAR_CVAR.md`, `PORTFOLIO_CONSTRUCTION.md`, `WALK_FORWARD.md`,
-`MONTE_CARLO.md`, `ROBUSTNESS.md`, `SENSITIVITY.md`, `PAPER_TRADING.md`,
-`BROKER_API.md`, `POSITION_RECONCILIATION.md`, `KILL_SWITCH.md`,
-`API_SECURITY.md`, `STRATEGY_SANDBOX.md`, `AUDIT_LOGGING.md`,
-`OBSERVABILITY.md`, `DISASTER_RECOVERY.md`, `DEPLOYMENT.md`.
+| Blueprint domain | Where it is covered | Dedicated doc |
+|---|---|---|
+| Market data, calendars, quality | `data/` | [DATA_QUALITY.md](DATA_QUALITY.md) |
+| Technical indicators | `quant/indicators.py` | this table |
+| Corporate actions, survivorship | `data/corporate_actions.py` | [CORPORATE_ACTIONS.md](CORPORATE_ACTIONS.md) |
+| Feature store, availability | `features/` | [FEATURE_STORE.md](FEATURE_STORE.md) |
+| Fundamentals, macro, sentiment | `core/timestamps.md` availability model | [TIMESTAMPS.md](TIMESTAMPS.md) |
+| Regime detection | `ml/` clustering + `validation/splits.regime_breakdown` | this table |
+| Regression, factor, cross-sectional | `quant/regression.py` | this table |
+| Strategy engine | `strategy/` | this table |
+| Transaction costs, slippage, liquidity | `backtest/costs.py`, `liquidity.py` | [BACKTESTING.md](BACKTESTING.md) |
+| Position sizing | `backtest/sizing.py` | [RISK_ENGINE.md](RISK_ENGINE.md) |
+| VaR, CVaR, drawdown | `quant/risk_metrics.py` | [RISK_ENGINE.md](RISK_ENGINE.md) |
+| Portfolio construction, risk parity | `portfolio/construction.py` | [PORTFOLIO_CONSTRUCTION.md](PORTFOLIO_CONSTRUCTION.md) |
+| Walk-forward, Monte Carlo, robustness, sensitivity | `validation/splits.py` | [VALIDATION.md](VALIDATION.md) |
+| Overfitting, multiple testing | `validation/overfitting.py` | [OVERFITTING.md](OVERFITTING.md) |
+| ML models, calibration, drift | `ml/` | [MACHINE_LEARNING.md](MACHINE_LEARNING.md) |
+| Model versioning, promotion | `ml/registry.py` | [MODEL_REGISTRY.md](MODEL_REGISTRY.md) |
+| Risk limits, kill switches | `risk/` | [RISK_ENGINE.md](RISK_ENGINE.md) |
+| Paper trading | `execution/paper_trading.py` | [EXECUTION.md](EXECUTION.md) |
+| Broker API, reconciliation | `execution/` | [EXECUTION.md](EXECUTION.md) |
+| Live-trading gate | `execution/live_gate.py` | [LIVE_TRADING.md](LIVE_TRADING.md) |
+| API security, RBAC, audit, sandbox | `security/` | [SECURITY.md](SECURITY.md) |
+| Observability, latency, alerts | `monitoring/` | [EXECUTION.md](EXECUTION.md) |
+| Cross-platform support | `core/platform.py` | [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md) |
 
-The topics are covered substantively in the documents above even where a
-dedicated file is pending — for example stop and position-sizing behaviour is
-in [RISK_ENGINE.md](RISK_ENGINE.md), and the broker interface and
-reconciliation are in [EXECUTION.md](EXECUTION.md).
+**Not implemented**, and stated rather than implied:
+
+- **Data vendor connectors.** No live fundamental, macro, or news feed. The
+  simulator produces synthetic data, and point-in-time fundamentals need a
+  licensed source with real publication timestamps.
+- **Broker adapters.** Only the simulated paper broker. Wiring a real venue is
+  left to the operator, deliberately — see [LIVE_TRADING.md](LIVE_TRADING.md).
+- **Web dashboards.** The FastAPI surface and PWA assets exist; no UI is built.
+- **Options, futures roll, and asset-specific analytics.** The instrument layer
+  supports the asset classes, but there is no chain analytics or roll logic.
+- **Intraday execution realism.** No queue position, order-book depth, or
+  adverse selection.
 
 ---
 
