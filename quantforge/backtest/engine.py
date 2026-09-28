@@ -174,6 +174,8 @@ class BacktestResult:
     benchmark_returns: Optional[pd.Series] = None
     warnings: list[str] = field(default_factory=list)
     rejected_orders: list[dict] = field(default_factory=list)
+    #: Features the strategy references but the feature frame does not provide.
+    missing_features: list[str] = field(default_factory=list)
 
     def order_frame(self) -> pd.DataFrame:
         if not self.orders:
@@ -278,6 +280,38 @@ class BacktestEngine:
 
     # -- main loop ---------------------------------------------------------
 
+    def _required_features(self) -> list[str]:
+        """Feature names the strategy's rules reference.
+
+        Walks the condition tree rather than relying on a hand-maintained list,
+        which would drift out of sync with the rule the moment either changed.
+        """
+        from quantforge.strategy.conditions import Condition, ConditionGroup
+
+        names: list[str] = []
+
+        def walk(rule) -> None:
+            if isinstance(rule, Condition):
+                names.append(rule.feature)
+                if rule.ref:
+                    names.append(rule.ref)
+            elif isinstance(rule, ConditionGroup):
+                for child in rule.children:
+                    walk(child)
+
+        walk(self.strategy.entry_rule)
+        for rules in (self.strategy.long_exit_rules, self.strategy.short_exit_rules):
+            for rule in rules:
+                if rule.kind in ("indicator", "indicator_cross"):
+                    names.append(rule.params.get("feature", ""))
+                    if rule.params.get("ref"):
+                        names.append(rule.params["ref"])
+        # Stops read ATR directly off the feature row.
+        if self.strategy.stop.stop_type.value.startswith("atr") or \
+           self.strategy.stop.stop_type.value.startswith("trailing"):
+            names.append("atr_14")
+        return [n for n in dict.fromkeys(names) if n]
+
     def run(
         self,
         data: pd.DataFrame,
@@ -295,6 +329,20 @@ class BacktestEngine:
 
         if data.empty:
             raise BacktestError("no bars to simulate")
+
+        # Preflight: a strategy referencing a feature the frame does not
+        # provide would evaluate every condition to False and "trade" nothing.
+        # A zero-signal backtest looks like a valid result, so this is raised
+        # rather than warned about.
+        missing = [n for n in self._required_features() if n not in features.columns]
+        if missing:
+            raise BacktestError(
+                f"strategy {self.strategy.strategy_id}@{self.strategy.version} "
+                f"references features absent from the feature frame: {missing}. "
+                "Rebuild the feature frame with those columns. Without them every "
+                "condition evaluates False and the backtest would report a flat "
+                "result rather than failing."
+            )
 
         portfolio = Portfolio(cfg.initial_capital, cfg.base_currency,
                               cfg.allow_shorting)

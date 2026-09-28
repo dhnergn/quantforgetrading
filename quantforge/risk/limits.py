@@ -418,17 +418,22 @@ class RiskEngine:
     def clamp_quantity(
         self, portfolio, instrument_id: str, side: str,
         quantity: float, price: float,
+        margin: float = 0.95,
     ) -> float:
-        """Largest quantity that passes every limit.
+        """Largest quantity that passes every limit, with a safety margin.
 
-        Returns the original quantity when it already passes. Binary search is
-        used because several limits interact (a smaller size reduces every
-        utilisation monotonically, which makes the feasible set an interval
-        containing zero).
+        ``margin`` deliberately stops short of the exact boundary. Binary
+        search finds the largest *passing* size, which by construction sits
+        infinitesimally below the limit; since the order is sized on bar ``t``'s
+        close and filled on bar ``t+1``'s open, any adverse gap then pushes it
+        over and the order is rejected every time. Sizing to 95% of the
+        feasible boundary trades a sliver of position size for orders that
+        actually fill.
         """
-        if self.check_order(portfolio, instrument_id, side, quantity, price).approved:
-            return quantity
-        lo, hi = 0.0, quantity
+        target = quantity * margin
+        if self.check_order(portfolio, instrument_id, side, target, price).approved:
+            return target
+        lo, hi = 0.0, target
         for _ in range(40):
             mid = (lo + hi) / 2.0
             if self.check_order(portfolio, instrument_id, side, mid, price).approved:
