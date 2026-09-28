@@ -309,6 +309,32 @@ def walk_forward(
 
 
 def _extract_metric(out: Any, objective: str) -> float:
+    """Pull a scalar score from whatever ``fit_predict`` returned.
+
+    A bare return Series is the most common return type and is scored
+    directly, so a caller is not forced to wrap it in a dict just to be
+    ranked. Anything unscorable yields NaN, which the parameter search then
+    skips rather than treating as zero.
+    """
+    if isinstance(out, pd.Series):
+        from quantforge.quant import risk_metrics as rm
+
+        r = out.dropna()
+        if r.empty:
+            return float("nan")
+        if objective == "sharpe":
+            return rm.sharpe_ratio(r).value
+        if objective == "sortino":
+            return rm.sortino_ratio(r).value
+        if objective in ("return", "total_return", "cagr"):
+            wealth = (1.0 + r).cumprod()
+            years = len(r) / 252.0
+            if years <= 0 or wealth.iloc[-1] <= 0:
+                return float("nan")
+            return float(wealth.iloc[-1] ** (1.0 / years) - 1.0)
+        if objective == "max_drawdown":
+            return rm.max_drawdown((1.0 + r).cumprod()).max_drawdown
+        return float("nan")
     if isinstance(out, dict):
         for key in (objective, f"{objective}_oos", "score"):
             if key in out:
@@ -320,6 +346,9 @@ def _extract_metric(out: Any, objective: str) -> float:
         if isinstance(m, dict) and objective in m:
             v = m[objective]
             return float(v if not hasattr(v, "value") else v.value)
+        returns = out.get("returns")
+        if isinstance(returns, pd.Series):
+            return _extract_metric(returns, objective)
         return float("nan")
     if hasattr(out, objective):
         v = getattr(out, objective)

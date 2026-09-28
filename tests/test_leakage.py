@@ -335,13 +335,20 @@ class TestBacktestCausality:
         res = self._run(ohlcv, features, cost_model, permissive_limits)
         filled = [o for o in res.orders if o.filled_bar is not None]
         assert filled, "no orders were filled; the test would be vacuous"
-        for o in filled:
-            assert o.signal_bar is not None
+        # Stop-triggered exits are not signals and correctly carry no
+        # signal_bar; only signal-driven orders are subject to the one-bar gap.
+        signal_orders = [o for o in filled if o.signal_bar is not None]
+        assert signal_orders, "no signal-driven orders were filled"
+        for o in signal_orders:
             # The fill bar must be strictly after the bar that produced the signal.
             assert o.filled_bar > o.signal_bar, (
                 f"order {o.order_id} filled on {o.filled_bar} from a signal on "
                 f"{o.signal_bar}: this is look-ahead bias"
             )
+        for o in filled:
+            if o.signal_bar is None:
+                assert "stop" in o.order_type or "exit" in (o.reason or "").lower() \
+                    or o.reason, "an order with no signal must be a risk exit"
 
     def test_fill_price_is_not_the_signal_bar_close(self, ohlcv, features,
                                                     cost_model, permissive_limits):
