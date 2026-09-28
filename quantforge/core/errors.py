@@ -250,3 +250,18 @@ class ConfigurationError(QuantForgeError):
 
 class UnsupportedAssetClass(QuantForgeError):
     code = "UNSUPPORTED_ASSET_CLASS"
+
+
+# -- portfolio construction -------------------------------------------------
+
+
+class PortfolioConstructionError(QuantForgeError):
+    """An allocation could not be produced, or would be meaningless.
+
+    Raised rather than returning a degraded result. A covariance that is not
+    positive definite has no risk-parity solution; substituting the
+    equal-weight answer for it would report a portfolio the caller did not ask
+    for and that no one evaluated.
+    """
+
+    code = "PORTFOLIO_CONSTRUCTION_ERROR"

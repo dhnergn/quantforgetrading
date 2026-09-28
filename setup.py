@@ -21,6 +21,7 @@ PACKAGES = [
     "quantforge.features",
     "quantforge.strategy",
     "quantforge.backtest",
+    "quantforge.portfolio",
     "quantforge.validation",
     "quantforge.ml",
     "quantforge.risk",
