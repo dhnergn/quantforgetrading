@@ -1,7 +1,0 @@
-README.md
-setup.py
-quantforge.egg-info/PKG-INFO
-quantforge.egg-info/SOURCES.txt
-quantforge.egg-info/dependency_links.txt
-quantforge.egg-info/requires.txt
-quantforge.egg-info/top_level.txt

@@ -15,6 +15,8 @@ PACKAGES = [
     "quantforge.data",
     "quantforge.quant",
     "quantforge.features",
+    "quantforge.indicators",
+    "quantforge.strategies",
     "quantforge.strategy",
     "quantforge.backtest",
     "quantforge.validation",
