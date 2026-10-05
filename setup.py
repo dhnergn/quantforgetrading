@@ -44,6 +44,11 @@ setup(
     long_description=README,
     long_description_content_type="text/markdown",
     packages=PACKAGES,
+    # The PWA assets and the dashboard page. Without this the wheel installs
+    # successfully and the API serves a bare 404 for /static, which looks like
+    # a routing bug rather than a packaging omission.
+    package_data={"quantforge.api": ["static/*"]},
+    include_package_data=True,
     python_requires=">=3.10",
     install_requires=[
         "numpy>=1.24,<3.0",

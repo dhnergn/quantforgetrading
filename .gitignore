@@ -19,3 +19,8 @@ dist/
 # material must never be.
 .env
 *.local.yaml
+
+node_modules/
+dist/
+.env
+.env.local

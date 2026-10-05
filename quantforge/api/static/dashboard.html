@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>QuantForge AI — Portfolio Dashboard</title>
+    <style>
+        /* Dark palette chosen to match the existing PWA shell. Every colour
+           pair here was checked for contrast against its own background. */
+        :root {
+            --bg: #14141f;
+            --panel: #1c1c2e;
+            --panel-2: #232338;
+            --border: #2e2e4a;
+            --ink: #e8e8f0;
+            --ink-dim: #9a9ab0;
+            --ink-faint: #6e6e86;
+            --accent: #4dd4ff;
+            --good: #4ade80;
+            --warn: #fbbf24;
+            --bad: #f87171;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg); color: var(--ink);
+            font-size: 15px; line-height: 1.5;
+            padding: 1rem; padding-bottom: 4rem;
+        }
+        .wrap { max-width: 1180px; margin: 0 auto; }
+
+        header { display: flex; flex-wrap: wrap; gap: 1rem;
+                 align-items: baseline; justify-content: space-between;
+                 margin-bottom: 0.5rem; }
+        h1 { font-size: 1.35rem; color: var(--accent); font-weight: 650; }
+        h2 { font-size: 0.95rem; font-weight: 650; letter-spacing: 0.02em; }
+        a { color: var(--accent); }
+
+        /* The disclosure sits above every number on the page, not in a footer.
+           A reader who screenshots one card still carries it. */
+        .disclosure {
+            background: #f8717110; border: 1px solid #f8717133; color: #fca5a5;
+            border-radius: 8px; padding: 0.7rem 0.9rem; font-size: 0.82rem;
+            margin: 0.9rem 0 1.2rem;
+        }
+        .controls {
+            display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center;
+            background: var(--panel); border: 1px solid var(--border);
+            border-radius: 10px; padding: 0.8rem; margin-bottom: 1.2rem;
+        }
+        input, button {
+            font: inherit; border-radius: 7px; border: 1px solid var(--border);
+            padding: 0.5rem 0.75rem;
+        }
+        input { background: var(--bg); color: var(--ink); min-width: 15rem; flex: 1 1 15rem; }
+        input::placeholder { color: var(--ink-faint); }
+        button { background: var(--panel-2); color: var(--accent); cursor: pointer; }
+        button:hover { background: #2c2c48; }
+        button[disabled] { opacity: 0.5; cursor: not-allowed; }
+        .hint { color: var(--ink-faint); font-size: 0.78rem; flex-basis: 100%; }
+
+        .tally { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;
+                 font-size: 0.8rem; }
+        .pill { padding: 0.2rem 0.6rem; border-radius: 999px; border: 1px solid var(--border); }
+        .pill.ok { color: var(--good); border-color: #4ade8044; }
+        .pill.no { color: var(--ink-dim); }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1rem; }
+        .card { background: var(--panel); border: 1px solid var(--border);
+                border-radius: 10px; padding: 1rem; min-width: 0; }
+        .card.unavailable { border-style: dashed; }
+        .card h2 { display: flex; justify-content: space-between; align-items: baseline;
+                   gap: 0.5rem; margin-bottom: 0.15rem; }
+        .flag { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.04em;
+                text-transform: uppercase; white-space: nowrap; }
+        .flag.yes { color: var(--good); } .flag.no { color: var(--warn); }
+
+        /* The basis line under every title. A number without its denominator is
+           not checkable, so this is structural rather than decorative. */
+        .basis { color: var(--ink-faint); font-size: 0.72rem; margin-bottom: 0.7rem;
+                 font-variant-numeric: tabular-nums; }
+        .caveat { color: var(--ink-dim); font-size: 0.75rem; margin-top: 0.7rem;
+                  padding-top: 0.6rem; border-top: 1px solid var(--border); }
+        .reason { color: var(--warn); font-size: 0.8rem; }
+        .empty { color: var(--ink-faint); font-size: 0.82rem; font-style: italic; }
+
+        .stats { display: grid; grid-template-columns: 1fr auto; gap: 0.3rem 0.8rem;
+                 font-size: 0.85rem; }
+        .stats dt { color: var(--ink-dim); }
+        .stats dd { text-align: right; font-variant-numeric: tabular-nums; }
+        .nan { color: var(--ink-faint); font-style: italic; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        th, td { text-align: right; padding: 0.3rem 0.4rem; white-space: nowrap; }
+        th:first-child, td:first-child { text-align: left; }
+        thead th { color: var(--ink-dim); font-weight: 600;
+                   border-bottom: 1px solid var(--border); }
+        td { font-variant-numeric: tabular-nums; }
+        .pos { color: var(--good); } .neg { color: var(--bad); }
+        .scroll { overflow-x: auto; }
+
+        svg { display: block; width: 100%; height: auto; }
+        svg .grid-line { stroke: var(--border); stroke-width: 1; }
+        svg .axis-text { fill: var(--ink-faint); font-size: 9px; }
+        .legend { display: flex; flex-wrap: wrap; gap: 0.8rem; font-size: 0.72rem;
+                  color: var(--ink-dim); margin-top: 0.5rem; }
+        .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+                    margin-right: 0.3rem; vertical-align: baseline; }
+
+        /* Correlation heatmap. 1 = co-movement, -1 = counter-movement, and the
+           midpoint is deliberately mid-grey rather than white so the diverging
+           scale is visible instead of washing out. */
+        .heat { display: grid; gap: 2px; font-size: 0.7rem; }
+        .heat div { padding: 0.35rem 0.2rem; text-align: center; border-radius: 3px;
+                    font-variant-numeric: tabular-nums; }
+        .heat .hdr { background: none; color: var(--ink-dim); }
+        .heat .rhdr { background: none; color: var(--ink-dim); text-align: right;
+                      padding-right: 0.4rem; white-space: nowrap; }
+
+        .bar-row { display: grid; grid-template-columns: 1fr auto; gap: 0.4rem;
+                   font-size: 0.8rem; align-items: center; margin-bottom: 0.3rem; }
+        .bar-track { grid-column: 1 / -1; height: 6px; background: var(--bg);
+                     border-radius: 3px; overflow: hidden; }
+        .bar-fill { height: 100%; background: var(--accent); }
+        .bar-fill.unclassified { background: var(--ink-faint); }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <h1>Portfolio Dashboard</h1>
+        <a href="/static/index.html">&larr; back</a>
+    </header>
+
+    <div class="disclosure">
+        <strong>Read this before any number below.</strong> These are historical
+        figures for the tested period under the stated assumptions. Past
+        performance does not predict future returns, and nothing here is a
+        forecast. A backtest is evidence about a period, not a claim about what
+        comes next. Every component shows its own sample size and period
+        because a ratio computed from a handful of observations is a number, not
+        an estimate.
+    </div>
+
+    <div class="controls">
+        <input id="pid" placeholder="portfolio id, or job id" autocomplete="off" spellcheck="false">
+        <button id="load">Load</button>
+        <button id="reload" disabled>Refresh</button>
+        <span class="hint" id="status">
+            The server has no default portfolio on purpose. Supply an id — a
+            default would show you whichever account happened to be loaded.
+        </span>
+    </div>
+
+    <div class="tally" id="tally"></div>
+    <div class="grid" id="grid"></div>
+</div>
+
+<script>
+// ---------------------------------------------------------------- helpers
+const $ = (id) => document.getElementById(id);
+
+// Undefined is rendered as a word, never as a blank cell and never as 0. A
+// blank cell reads as "no data"; a 0 reads as a measured zero. Neither is what
+// "not computable from this sample" means.
+function num(v, digits = 2) {
+  if (v === null || v === undefined || Number.isNaN(v)) return { text: 'not defined', cls: 'nan' };
+  if (!Number.isFinite(v)) return { text: 'not finite', cls: 'nan' };
+  return { text: v.toLocaleString(undefined, { maximumFractionDigits: digits }), cls: '' };
+}
+function pct(v, digits = 2) {
+  if (v === null || v === undefined || Number.isNaN(v)) return { text: 'not defined', cls: 'nan' };
+  if (!Number.isFinite(v)) return { text: 'not finite', cls: 'nan' };
+  const s = v.toLocaleString(undefined, { maximumFractionDigits: digits, style: 'percent' });
+  return { text: s, cls: v < 0 ? 'neg' : 'pos' };
+}
+function money(v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return { text: '—', cls: 'nan' };
+  const a = Math.abs(v);
+  const d = a >= 1e6 ? 0 : 2;
+  return { text: v.toLocaleString(undefined, { maximumFractionDigits: d }), cls: v < 0 ? 'neg' : 'pos' };
+}
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function signed(v, digits = 2) {
+  const n = num(v, digits);
+  if (n.cls === 'nan') return n;
+  n.cls = v < 0 ? 'neg' : 'pos';
+  return n;
+}
+function cell(v, digits = 2) {
+  const n = num(v, digits);
+  return `<td class="${n.cls}">${esc(n.text)}</td>`;
+}
+
+// ---------------------------------------------------------------- charts
+// Plain SVG: no chart library, so the page has no third-party supply chain and
+// works offline once cached. Each series is drawn against its own scale, and
+// the scale is labelled — an unlabelled line chart is decoration.
+
+function lineChart(dates, series, opts = {}) {
+  const W = 460, H = 190, PL = 44, PR = 8, PT = 10, PB = 22;
+  const w = W - PL - PR, h = H - PT - PB;
+  const all = series.flatMap((s) => s.values.filter(Number.isFinite));
+  if (all.length < 2) return '<p class="empty">Not enough points to plot.</p>';
+  let lo = Math.min(...all), hi = Math.max(...all);
+  if (opts.zero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  if (opts.floorZero && lo > 0) lo = 0;
+  if (hi === lo) { hi = lo + 1; lo -= 1; }
+  const pad = (hi - lo) * 0.06;
+  lo -= pad; hi += pad;
+  const X = (i) => PL + (i / (dates.length - 1)) * w;
+  const Y = (v) => PT + h - ((v - lo) / (hi - lo)) * h;
+
+  let g = '';
+  for (let k = 0; k <= 3; k++) {
+    const v = lo + ((hi - lo) * k) / 3;
+    const y = Y(v);
+    g += `<line class="grid-line" x1="${PL}" y1="${y.toFixed(1)}" x2="${W - PR}" y2="${y.toFixed(1)}"/>`;
+    g += `<text class="axis-text" x="${PL - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end">${(opts.fmt ? opts.fmt(v) : v.toFixed(2))}</text>`;
+  }
+  let paths = '';
+  for (const s of series) {
+    const pts = s.values.map((v, i) => (Number.isFinite(v) ? `${X(i).toFixed(1)},${Y(v).toFixed(1)}` : null)).filter(Boolean);
+    if (pts.length < 2) continue;
+    paths += `<polyline fill="none" stroke="${s.colour}" stroke-width="1.6" points="${pts.join(' ')}"/>`;
+  }
+  const legend = `<div class="legend">${series.map((s) => `<span><i style="background:${s.colour}"></i>${esc(s.label)}</span>`).join('')}</div>`;
+  const x0 = esc(String(dates[0] || '')).slice(0, 10);
+  const x1 = esc(String(dates[dates.length - 1] || '')).slice(0, 10);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label || 'chart')}">
+    ${g}${paths}
+    <text class="axis-text" x="${PL}" y="${H - 6}">${x0}</text>
+    <text class="axis-text" x="${W - PR}" y="${H - 6}" text-anchor="end">${x1}</text>
+  </svg>${legend}`;
+}
+
+function barChart(values, opts = {}) {
+  const W = 460, H = 120, PL = 6, PB = 30, PT = 8, PR = 6;
+  const w = W - PL - PR, h = H - PT - PB;
+  const bw = w / values.length;
+  let lo = Math.min(0, ...values), hi = Math.max(0, ...values);
+  if (hi === lo) hi = lo + 1;
+  const Y = (v) => PT + h - ((v - lo) / (hi - lo)) * h;
+  const zero = Y(0);
+  const bars = values.map((v, i) => {
+    const y = v >= 0 ? Y(v) : zero;
+    const bh = Math.max(1, Math.abs(Y(v) - zero));
+    return `<rect x="${(PL + i * bw + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${bh.toFixed(1)}" fill="${v >= 0 ? '#4ade80' : '#f87171'}"/>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label || 'bar chart')}">
+    <line class="grid-line" x1="${PL}" y1="${zero.toFixed(1)}" x2="${W - PR}" y2="${zero.toFixed(1)}"/>
+    ${bars}
+    <text class="axis-text" x="${PL}" y="${H - 8}">${esc(String(opts.from || '')).slice(0, 10)}</text>
+    <text class="axis-text" x="${W - PR}" y="${H - 8}" text-anchor="end">${esc(String(opts.to || '')).slice(0, 10)}</text>
+  </svg>`;
+}
+
+function heatmap(instruments, matrix) {
+  if (!instruments.length) return '<p class="empty">No instruments.</p>';
+  let html = '<div class="heat" style="grid-template-columns:auto repeat(' + instruments.length + ',1fr)">';
+  html += '<div class="hdr"></div>' + instruments.map((i) => `<div class="hdr">${esc(i.slice(0, 6))}</div>`).join('');
+  matrix.forEach((row, r) => {
+    html += `<div class="rhdr">${esc(instruments[r].slice(0, 9))}</div>`;
+    row.forEach((v) => {
+      if (v === null || v === undefined || !Number.isFinite(v)) {
+        html += '<div class="nan" style="background:#20202f">—</div>';
+      } else {
+        // Diverging scale: full saturation at ±1, neutral at 0.
+        const a = Math.abs(v);
+        const col = v >= 0 ? `rgba(74,222,128,${(a * 0.75).toFixed(3)})` : `rgba(248,113,113,${(a * 0.75).toFixed(3)})`;
+        html += `<div style="background:${col};color:#e8e8f0" title="${v.toFixed(3)}">${v.toFixed(2)}</div>`;
+      }
+    });
+  });
+  return html + '</div>';
+}
+
+// ---------------------------------------------------------------- renderers
+// One function per component. A renderer that cannot draw its data returns a
+// statement saying so — it never returns an empty figure, because an empty
+// figure is indistinguishable from a component that failed to load.
+
+function basis(c) {
+  const bits = [];
+  if (c.n_observations) bits.push(`n=${c.n_observations}`);
+  if (c.period) bits.push(c.period);
+  return bits.length ? bits.join(' · ') : 'no observations';
+}
+
+const R = {
+  equity_curve: (c) => {
+    const d = c.data;
+    const series = [{ label: 'equity (rebased to 1.0)', colour: '#4dd4ff', values: d.equity }];
+    if (d.benchmark) series.push({ label: 'benchmark', colour: '#fbbf24', values: d.benchmark });
+    return lineChart(d.dates, series, { label: 'equity curve', fmt: (v) => v.toFixed(2) })
+      + `<p class="basis" style="margin-top:.5rem">${money(d.start_equity).text} → ${money(d.end_equity).text}</p>`;
+  },
+  daily_pnl: (c) => barChart(c.data.pnl, { label: 'per-period P&L', from: c.data.dates[0], to: c.data.dates[c.data.dates.length - 1] }),
+  unrealized_pnl: (c) => {
+    const d = c.data;
+    return `<dl class="stats">
+      <dt>unrealised</dt><dd>${money(d.total).text}</dd>
+      <dt>realised</dt><dd>${money(d.realized).text}</dd>
+      <dt>fees paid</dt><dd>${money(d.fees_paid).text}</dd>
+      <dt>equity</dt><dd>${money(d.equity).text}</dd></dl>`;
+  },
+  realized_pnl: (c) => {
+    const rows = c.data;
+    if (!rows.length) return '<p class="empty">No closed trades.</p>';
+    return `<div class="scroll"><table><thead><tr>
+      <th>instrument</th><th>exit</th><th>net P&amp;L</th><th>return</th><th>bars</th><th>reason</th>
+      </tr></thead><tbody>${rows.map((r) => `<tr>
+      <td>${esc(r.instrument_id)}</td>
+      <td>${esc(String(r.exit_time).slice(0, 10))}</td>
+      <td class="${money(r.net_pnl).cls}">${esc(money(r.net_pnl).text)}</td>
+      <td class="${pct(r.return_pct).cls}">${esc(pct(r.return_pct).text)}</td>
+      <td>${esc(r.bars_held)}</td>
+      <td>${esc(r.exit_reason || '—')}</td></tr>`).join('')}</tbody></table></div>`;
+  },
+  exposure: (c) => {
+    const d = c.data;
+    return `<dl class="stats">
+      <dt>equity</dt><dd>${money(d.equity).text}</dd>
+      <dt>cash</dt><dd>${money(d.cash).text}</dd>
+      <dt>market value</dt><dd>${money(d.market_value).text}</dd>
+      <dt>gross</dt><dd>${esc(money(d.gross_exposure).text)} <span class="basis">(${esc(pct(d.gross_pct_equity).text)})</span></dd>
+      <dt>net</dt><dd>${esc(money(d.net_exposure).text)} <span class="basis">(${esc(pct(d.net_pct_equity).text)})</span></dd>
+      <dt>positions</dt><dd>${esc(d.position_count)}</dd></dl>`;
+  },
+  positions: (c) => {
+    const rows = c.data;
+    if (!rows.length) return '<p class="empty">No open positions.</p>';
+    return `<div class="scroll"><table><thead><tr>
+      <th>instrument</th><th>dir</th><th>qty</th><th>entry</th><th>last</th><th>unreal.</th><th>%</th>
+      </tr></thead><tbody>${rows.map((r) => `<tr>
+      <td>${esc(r.instrument_id)}</td>
+      <td>${r.direction === 'long' ? 'long' : 'short'}</td>
+      <td>${esc(r.quantity)}</td>
+      <td>${esc(r.average_entry_price.toFixed(2))}</td>
+      <td>${esc(r.last_price.toFixed(2))}</td>
+      <td class="${money(r.unrealized_pnl).cls}">${esc(money(r.unrealized_pnl).text)}</td>
+      <td class="${pct(r.unrealized_pct).cls}">${esc(pct(r.unrealized_pct).text)}</td></tr>`).join('')}</tbody></table></div>`;
+  },
+  sector_exposure: (c) => breakdown(c, 'sector'),
+  asset_class_exposure: (c) => breakdown(c, 'asset class'),
+  correlations: (c) => heatmap(c.data.instruments, c.data.matrix),
+  portfolio_volatility: (c) => lineChart(c.data.dates, [
+    { label: `rolling vol (${c.data.window}-period, annualised)`, colour: '#c084fc', values: c.data.volatility },
+  ], { label: 'rolling volatility', zero: true, fmt: (v) => (v * 100).toFixed(0) + '%' })
+    + `<p class="basis" style="margin-top:.5rem">current ${esc(pct(c.data.current).text)}</p>`,
+  var: (c) => {
+    const d = c.data;
+    return `<dl class="stats">
+      <dt>VaR ${esc((d.confidence * 100).toFixed(0))}% (${esc(d.horizon_periods)}p)</dt><dd>${esc(pct(d.var_return).text)}</dd>
+      <dt>in currency</dt><dd>${esc(money(d.var_currency).text)}</dd>
+      <dt>expected shortfall</dt><dd>${esc(pct(d.es_return).text)}</dd>
+      <dt>ES in currency</dt><dd>${esc(money(d.es_currency).text)}</dd>
+      <dt>method</dt><dd>${esc(d.method)}</dd>
+      <dt>equity then</dt><dd>${esc(money(d.equity_at_measurement).text)}</dd></dl>`;
+  },
+  drawdown: (c) => {
+    const d = c.data;
+    return lineChart(d.dates, [{ label: 'underwater', colour: '#f87171', values: d.drawdown }],
+      { label: 'drawdown', zero: true, floorZero: true, fmt: (v) => (v * 100).toFixed(0) + '%' })
+      + `<p class="basis" style="margin-top:.5rem">max ${esc(pct(d.max_drawdown).text)} from ${esc(String(d.peak).slice(0, 10))}, current ${esc(pct(d.current_drawdown).text)}</p>`;
+  },
+  summary_statistics: (c) => {
+    const d = c.data;
+    const rows = [
+      ['total return', pct(d.total_return).text, pct(d.total_return).cls],
+      ['annualised', pct(d.annualised_return).text, pct(d.annualised_return).cls],
+      ['volatility', pct(d.volatility).text, ''],
+      ['Sharpe', signed(d.sharpe).text, signed(d.sharpe).cls],
+      ['Sortino', signed(d.sortino).text, signed(d.sortino).cls],
+      ['Calmar', signed(d.calmar).text, signed(d.calmar).cls],
+      ['max drawdown', pct(d.max_drawdown).text, ''],
+      ['closed trades', d.n_trades, ''],
+    ];
+    if (d.win_rate !== undefined) rows.push(['win rate', pct(d.win_rate).text, '']);
+    if (d.profit_factor !== undefined) rows.push(['profit factor', num(d.profit_factor).text, '']);
+    return `<dl class="stats">${rows.map(([k, v, cls]) => `<dt>${esc(k)}</dt><dd class="${cls}">${esc(v)}</dd>`).join('')}</dl>
+      <p class="basis" style="margin-top:.6rem">annualised over ${esc(d.years_covered.toFixed(2))} years — ${esc(d.annualisation_basis)}</p>`;
+  },
+  beta: (c) => `<dl class="stats">
+      <dt>beta</dt><dd>${esc(signed(c.data.beta, 3).text)}</dd>
+      <dt>alpha (annualised)</dt><dd>${esc(signed(c.data.alpha, 4).text)}</dd>
+      <dt>overlapping periods</dt><dd>${esc(c.data.n_overlapping_periods)}</dd>
+      <dt>benchmark vol</dt><dd>${esc(pct(c.data.benchmark_volatility).text)}</dd></dl>`,
+};
+
+function breakdown(c, label) {
+  const rows = c.data;
+  if (!rows.length) return '<p class="empty">No open positions.</p>';
+  return rows.map((r) => {
+    const unclassified = r.label === 'UNCLASSIFIED';
+    return `<div class="bar-row">
+      <span>${esc(r.label)}</span>
+      <span>${esc(pct(r.pct_of_total, 1).text)}</span>
+      <div class="bar-track"><div class="bar-fill${unclassified ? ' unclassified' : ''}" style="width:${(r.pct_of_total * 100).toFixed(1)}%"></div></div>
+    </div>`;
+  }).join('') + `<p class="basis" style="margin-top:.6rem">coverage stated in the caveat below${label ? '' : ''}</p>`;
+}
+
+// ---------------------------------------------------------------- load
+let lastId = null;
+
+async function load(id) {
+  if (!id) { $('status').textContent = 'Enter a portfolio id first.'; return; }
+  lastId = id;
+  $('load').disabled = true; $('reload').disabled = true;
+  $('status').textContent = 'Loading…';
+  $('grid').innerHTML = ''; $('tally').innerHTML = '';
+  try {
+    const resp = await fetch(`/v1/dashboard/report?portfolio_id=${encodeURIComponent(id)}`,
+      { headers: { Accept: 'application/json' } });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      $('status').textContent = (body.detail || `Request failed (${resp.status})`);
+      return;
+    }
+    render(body);
+    $('status').textContent = `Loaded ${body.n_available} of ${body.n_total} components. Generated ${body.generated_at}.`;
+    $('reload').disabled = false;
+  } catch (err) {
+    $('status').textContent = `Could not reach the API: ${err.message}. Is the server running, and is this page served by it?`;
+  } finally {
+    $('load').disabled = false;
+  }
+}
+
+function render(report) {
+  const avail = [], missing = [];
+  for (const [name, c] of Object.entries(report.components)) (c.available ? avail : missing).push(name);
+
+  $('tally').innerHTML =
+    `<span class="pill ok">${avail.length} available</span>` +
+    `<span class="pill no">${missing.length} unavailable</span>` +
+    `<span class="pill">${esc(report.base_currency)}</span>`;
+
+  const order = avail.concat(missing);   // available first, then the gaps
+  $('grid').innerHTML = order.map((name) => {
+    const c = report.components[name];
+    const head = `<h2>${esc(name.replace(/_/g, ' '))}
+      <span class="flag ${c.available ? 'yes' : 'no'}">${c.available ? 'computed' : 'unavailable'}</span></h2>`;
+    const foot = c.available
+      ? (c.caveat ? `<div class="caveat">${esc(c.caveat)}</div>` : '')
+      : `<div class="reason">${esc(c.reason)}</div>`;
+    let bodyHtml = '';
+    if (c.available) {
+      const fn = R[name];
+      try { bodyHtml = fn ? fn(c) : '<p class="empty">No renderer for this component.</p>'; }
+      catch (err) { bodyHtml = `<p class="empty">Could not draw this component: ${esc(err.message)}</p>`; }
+    }
+    return `<div class="card${c.available ? '' : ' unavailable'}">${head}
+      <div class="basis">${esc(basis(c))}</div>${bodyHtml}${foot}</div>`;
+  }).join('');
+}
+
+$('load').addEventListener('click', () => load($('pid').value.trim()));
+$('reload').addEventListener('click', () => load(lastId));
+$('pid').addEventListener('keydown', (e) => { if (e.key === 'Enter') load($('pid').value.trim()); });
+</script>
+</body>
+</html>

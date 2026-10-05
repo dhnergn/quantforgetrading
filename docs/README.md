@@ -48,6 +48,7 @@ stated assumptions, not a prediction of future returns.
 | [TESTING.md](TESTING.md) | Test strategy, coverage, and the bugs the suite caught |
 | [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md) | **Host support: Linux, macOS, Windows; mobile as client** |
 | [PORTFOLIO_CONSTRUCTION.md](PORTFOLIO_CONSTRUCTION.md) | Multi-asset allocation, risk parity, risk attribution |
+| [DASHBOARD.md](DASHBOARD.md) | **The 14 Section 56 components, and why each is qualified** |
 
 ---
 
@@ -73,6 +74,7 @@ thinking a topic is undocumented.
 | Position sizing | `backtest/sizing.py` | [RISK_ENGINE.md](RISK_ENGINE.md) |
 | VaR, CVaR, drawdown | `quant/risk_metrics.py` | [RISK_ENGINE.md](RISK_ENGINE.md) |
 | Portfolio construction, risk parity | `portfolio/construction.py` | [PORTFOLIO_CONSTRUCTION.md](PORTFOLIO_CONSTRUCTION.md) |
+| Portfolio dashboard (all 14 components) | `analysis/dashboard.py` | [DASHBOARD.md](DASHBOARD.md) |
 | Walk-forward, Monte Carlo, robustness, sensitivity | `validation/splits.py` | [VALIDATION.md](VALIDATION.md) |
 | Overfitting, multiple testing | `validation/overfitting.py` | [OVERFITTING.md](OVERFITTING.md) |
 | ML models, calibration, drift | `ml/` | [MACHINE_LEARNING.md](MACHINE_LEARNING.md) |
@@ -94,7 +96,9 @@ thinking a topic is undocumented.
   to supply.
 - **Broker adapters.** Only the simulated paper broker. Wiring a real venue is
   left to the operator, deliberately — see [LIVE_TRADING.md](LIVE_TRADING.md).
-- **Web dashboards.** The FastAPI surface and PWA assets exist; no UI is built.
+- **Web dashboard UI beyond the portfolio dashboard.** The portfolio dashboard
+  is complete - see [DASHBOARD.md](DASHBOARD.md) - but there is no UI for
+  strategy authoring, model training, or order management.
 - **Options, futures roll, and asset-specific analytics.** The instrument layer
   supports the asset classes, but there is no chain analytics or roll logic.
 - **Intraday execution realism.** No queue position, order-book depth, or
@@ -104,7 +108,7 @@ thinking a topic is undocumented.
 
 ## What is implemented vs. planned
 
-### Implemented and tested (228 tests)
+### Implemented and tested (489 tests)
 
 - Instrument abstraction across 7 asset classes with contract specs
 - `TemporalEnvelope`, `DecisionChain`, multi-exchange calendars with DST
@@ -125,11 +129,17 @@ thinking a topic is undocumented.
 - RBAC, password hashing, tokens, rate limits, audit chain, sandbox
 - SQLAlchemy persistence with durable order dedupe
 - FastAPI with authn/authz, BOLA prevention, job queue
+- Portfolio dashboard: all 14 Section 56 components, with each unavailable
+  one reported as unavailable rather than rendered as zero or an empty chart
 
 ### Not implemented
 
 - Data vendor connectors (point-in-time fundamentals, macro vintages, news)
 - Broker adapters beyond the simulated paper broker
-- The web dashboards listed in blueprint Section 90
-- Multi-asset portfolio construction and risk parity
+- Strategy-authoring, model-training, and order-management UIs
 - Options, futures roll strategies, and other asset-specific analytics
+- Intraday execution realism: queue position, book depth, adverse selection
+
+Blueprint Section 90 does not exist; the blueprint ends at Section 77 plus two
+appendices. The earlier list referenced it, which sent a reader looking for
+something that was never specified.

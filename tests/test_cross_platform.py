@@ -187,6 +187,23 @@ class TestPWAFiles:
         assert icon_192.exists()
         assert icon_512.exists()
 
+    def test_dashboard_page_exists(self):
+        """The dashboard page is mounted at /static, so a missing file would
+        surface as a bare 404 rather than an application error."""
+        page = Path(__file__).parent.parent / "quantforge" / "api" / "static" / "dashboard.html"
+        assert page.exists()
+        assert page.stat().st_size > 5000, (
+            "the dashboard page is suspiciously small; the renderers may have "
+            "been truncated"
+        )
+
+    def test_dashboard_render_check_ships_with_the_tests(self):
+        """The render check is the only coverage of the page's JavaScript, so a
+        missing file would leave the rendering silently unverified."""
+        check = Path(__file__).parent / "js" / "dashboard_render_check.mjs"
+        assert check.exists()
+        assert check.stat().st_size > 1000
+
 
 class TestDockerFiles:
     """Test Docker files exist for containerized deployment."""

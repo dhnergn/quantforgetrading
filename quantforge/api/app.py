@@ -17,12 +17,14 @@ from __future__ import annotations
 import datetime as dt
 import os
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from quantforge.core.enums import (
@@ -162,6 +164,21 @@ def create_app(
         docs_url="/docs", redoc_url=None,
     )
     app.state.qf = _STATE
+
+    # -- static PWA assets -----------------------------------------------
+    # Served unauthenticated on purpose: the login shell and the risk
+    # disclosure have to be readable before anyone has a token. The files are
+    # static HTML/CSS/JS with no portfolio data in them, so there is nothing
+    # here to protect. Every number on the dashboard comes from a
+    # token-authenticated /v1 call, so hiding the page would only hide the
+    # disclosure.
+    _STATIC = Path(__file__).parent / "static"
+    if _STATIC.is_dir():
+        app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
+        @app.get("/", include_in_schema=False)
+        def serve_index():
+            return FileResponse(_STATIC / "index.html")
 
     # -- CORS: allow-list only, never "*" with credentials ---------------
     origins = os.environ.get("QUANTFORGE_CORS_ORIGINS", "").split(",")

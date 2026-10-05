@@ -144,7 +144,7 @@ quantforge/
   strategy/     declarative conditions, versioned strategies, registry
   backtest/     event-driven engine, portfolio accounting, costs, slippage, liquidity, sizing
   portfolio/    multi-asset construction, risk parity, risk attribution
-  analysis/     market regime detection
+  analysis/     market regime detection, portfolio dashboard
   validation/   splits, walk-forward, Monte Carlo, sensitivity, overfitting, metrics
   ml/           models, leakage-safe preprocessing, registry, drift
   risk/         limits engine, kill switches
@@ -338,6 +338,7 @@ Bugs the suite caught during development, each with a regression test:
 | [RISK_DISCLOSURE.md](docs/RISK_DISCLOSURE.md) | **Read before using any output** |
 | [PLATFORM_SUPPORT.md](docs/PLATFORM_SUPPORT.md) | **Host support, Windows degradations, mobile client** |
 | [PORTFOLIO_CONSTRUCTION.md](docs/PORTFOLIO_CONSTRUCTION.md) | Multi-asset allocation, risk parity, risk attribution |
+| [DASHBOARD.md](docs/DASHBOARD.md) | **Portfolio dashboard, all 14 components, honestly qualified** |
 | [ALTERNATIVE_DATA.md](docs/ALTERNATIVE_DATA.md) | **Fundamentals, macro, news, analyst revisions — point-in-time** |
 
 ---

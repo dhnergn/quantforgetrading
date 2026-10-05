@@ -1,4 +1,5 @@
-.PHONY: help install test test-leakage demo api config check host-info verify clean docker-build docker-run
+.PHONY: help install test test-strict test-leakage test-js check-all \
+        demo api config check host-info verify clean docker-build docker-run
 
 VENV := .venv
 PY   := $(VENV)/bin/python
@@ -16,8 +17,16 @@ install: ## Create the venv and install dependencies
 test: ## Run the full test suite
 	$(PY) -m pytest tests/ -q
 
+test-strict: ## Run the suite with deprecation and future warnings as errors
+	$(PY) -W error::DeprecationWarning -W error::FutureWarning -m pytest tests/ -q
+
 test-leakage: ## Run only the causality and leakage tests
 	$(PY) -m pytest tests/ -m leakage -q
+
+test-js: ## Run the dashboard's render check under node (skipped if absent)
+	$(PY) -m pytest tests/test_js_render_check.py -q -rs
+
+check-all: test-strict test-js check ## Tests, the JS render check, and the live gate
 
 demo: ## Run the end-to-end pipeline on synthetic data
 	$(PY) scripts/demo.py
